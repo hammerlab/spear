@@ -365,12 +365,15 @@ object ExecutorMetricsUpdateEvent {
     )
 }
 
-class Spear(sc: SparkContext) extends SparkListener {
+class Spear(sc: SparkContext,
+            mongoHost: String = "localhost",
+            mongoPort: Int = 27017) extends SparkListener {
 
-  sc.addSparkListener(this)
   val applicationId = sc.applicationId
 
-  val client = MongoClient("localhost", 27017)
+  val client = MongoClient(mongoHost, mongoPort)
+
+  println(s"Creating database for appplication: $applicationId")
   val db = client(applicationId)
 
 
@@ -399,6 +402,7 @@ class Spear(sc: SparkContext) extends SparkListener {
   val executorAdds = db("executor_adds")
   val executorRemoves = db("executor_removes")
 
+  sc.addSparkListener(this)
 
   def serializeAndInsert[T <: AnyRef](t: T, collection: MongoCollection)(implicit m: Manifest[T]): Unit = {
     val dbo = grater[T].asDBObject(t)
@@ -458,7 +462,9 @@ class Spear(sc: SparkContext) extends SparkListener {
   }
 
   override def onExecutorMetricsUpdate(executorMetricsUpdate: SparkListenerExecutorMetricsUpdate): Unit = {
-    serializeAndInsert(ExecutorMetricsUpdateEvent(executorMetricsUpdate), executorMetricUpdates)
+    if (executorMetricsUpdate.taskMetrics.size > 0) {
+      serializeAndInsert(ExecutorMetricsUpdateEvent(executorMetricsUpdate), executorMetricUpdates)
+    }
   }
 
   override def onExecutorAdded(executorAdded: SparkListenerExecutorAdded): Unit = {
