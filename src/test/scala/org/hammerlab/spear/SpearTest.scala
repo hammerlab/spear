@@ -1,7 +1,7 @@
 
 package org.hammerlab.spear
 
-import com.mongodb.casbah.MongoClient
+import com.mongodb.casbah.{MongoCollection, MongoClient}
 import org.scalatest.{Matchers, FunSuite}
 
 import com.github.fakemongo.Fongo
@@ -82,17 +82,7 @@ case class TestShuffleWriteMetrics(override val shuffleBytesWritten: Long,
                                    override val shuffleRecordsWritten: Long) extends SparkShuffleWriteMetrics
 
 
-class SpearTest extends FunSuite with Matchers {
-
-  val client = MongoClient("localhost", 27017)
-
-  val db = client("test")
-  val collection = db("test")
-  collection.drop()
-
-//  val mongo = new Fongo("fake-mongo")
-//  val db = mongo.getDB("test-db")
-//  val collection = db.getCollection("test-collection")
+class SpearTest extends FunSuite with Matchers with MongoTestCollection {
 
   val sparkRDDInfo = new SparkRDDInfo(1, "a", 2, SparkStorageLevel.MEMORY_AND_DISK)
   val rddInfo = RDDInfo(sparkRDDInfo)
