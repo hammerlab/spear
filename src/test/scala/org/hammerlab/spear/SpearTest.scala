@@ -1,12 +1,8 @@
 
 package org.hammerlab.spear
 
-import com.mongodb.casbah.{Imports, MongoClient}
-import com.novus.salat.transformers.CustomTransformer
+import com.mongodb.casbah.MongoClient
 import org.scalatest.{Matchers, FunSuite}
-
-import com.novus.salat._
-import com.mongodb.casbah.Imports._
 
 import com.github.fakemongo.Fongo
 
@@ -163,23 +159,9 @@ class SpearTest extends FunSuite with Matchers {
   val sparkExecutorMetricsUpdate = SparkListenerExecutorMetricsUpdate("execId", List((1L, 2, 3, sparkTaskMetrics)))
   val executorMetricsUpdateEvent = ExecutorMetricsUpdateEvent(sparkExecutorMetricsUpdate)
 
-  def testSerDe[T <: AnyRef](t: T)(implicit m: Manifest[T]): Unit = {
-    val dbo = grater[T].asDBObject(t)
-    collection.insert(dbo)
-    t should equal(grater[T].asObject(dbo))
-  }
-
   def testToMongo[T <: AnyRef](t: T): Unit = {
     val dbo = MongoCaseClassSerializer.to(t)
     collection.insert(dbo)
-  }
-
-  test("SerDe StageInfo") {
-    testSerDe(stageInfo)
-  }
-
-  test("SerDe RDDInfo") {
-    testSerDe(rddInfo)
   }
 
   test("toMongo RDDInfo") {
@@ -189,64 +171,6 @@ class SpearTest extends FunSuite with Matchers {
     testToMongo(executorMetricsUpdateEvent)
     testToMongo(T(List(A(1),A(2),A(3))))
     testToMongo(TaskEndReason(SparkSuccess))
-  }
-
-  test("SerDe BrokenRDDInfo fails") {
-    val brokenRDDInfo = BrokenRDDInfo(sparkRDDInfo)
-    val dbo = grater[BrokenRDDInfo].asDBObject(brokenRDDInfo)
-    try {
-      collection.insert(dbo)
-      fail("Inserting broken RDDInfo should not have worked, but did.")
-    } catch {
-      case e: RuntimeException if e.getMessage.startsWith("can't serialize") =>
-      case e: RuntimeException =>
-        throw new Exception(s"Found RuntimeException as expected, but message did not match expected: ${e.getMessage}", e)
-      case e: Exception =>
-        throw new Exception("Exception occurred but was not a RuntimeException as expected", e)
-    }
-  }
-
-  test("SerDe TaskInfo") {
-    testSerDe[TaskInfo](taskInfo)
-  }
-
-  test("SerDe TaskStartEvent") {
-    testSerDe(taskStartEvent)
-  }
-
-  test("SerDe TaskEndEvent") {
-    testSerDe(taskEndEvent)
-  }
-
-  test("SerDe ExecutorMetricsUpdate") {
-    testSerDe(executorMetricsUpdateEvent)
-  }
-
-  test("SerDes") {
-    testSerDe(B(A(4)))
-    testSerDe(C((3, A(4))))
-
-    //testSerDe(D(List((1, A(2)), (3, A(4)))))
-
-    testSerDe(E((1, 2, A(3))))
-    testSerDe(F(List((1, 2, A(3)), (4, 5, A(6)))))
-
-    testSerDe(G((1L, 2, 3, A(4))))
-    testSerDe(H(List((1L, 2, 3, A(4)), (5L, 6, 7, A(8)))))
-
-    testSerDe(I("name", (1L, 2, 3, A(4))))
-    testSerDe(J("name", List((1L, 2, 3, A(4)), (5L, 6, 7, A(8)))))
-
-    //testSerDe(K("name", List((1L, 2, 3, taskMetrics), (5L, 6, 7, taskMetrics))))
-    testSerDe(L("name", List((1L, 2, 3, inputMetrics), (5L, 6, 7, inputMetrics))))
-
-    //testSerDe(N("name", List((1L, 2, 3, M(Some(A(4)))), (5L, 6, 7, M(Some(A(8)))))))
-    testSerDe(O("name", List(M(Some(A(4))), M(Some(A(8))))))
-
-//    testSerDe(P(List((1L, 2, 3, M(Some(A(4)))), (5L, 6, 7, M(Some(A(8)))))))
-    testSerDe(Q(List(M(Some(A(4))), M(Some(A(8))))))
-//    testSerDe(R(List((1, M(Some(A(4)))), (5, M(Some(A(8)))))))
-//    testSerDe(S(List((1, 2, M(Some(A(4)))), (5, 6, M(Some(A(8)))))))
   }
 
 }
