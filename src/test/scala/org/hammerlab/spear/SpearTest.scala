@@ -6,7 +6,9 @@ import org.scalatest.{Matchers, FunSuite}
 
 import com.github.fakemongo.Fongo
 
-import org.apache.spark.{ Success => SparkSuccess }
+import org.apache.spark.{
+    Success => SparkSuccess
+}
 import org.apache.spark.executor.{
     TaskMetrics => SparkTaskMetrics,
     ShuffleWriteMetrics => SparkShuffleWriteMetrics,
@@ -16,8 +18,21 @@ import org.apache.spark.executor.{
     DataWriteMethod,
     DataReadMethod
 }
-import org.apache.spark.storage.{RDDInfo => SparkRDDInfo, StorageLevel => SparkStorageLevel, BlockStatus => SparkBlockStatus, RDDBlockId, BlockId}
-import org.apache.spark.scheduler.{StageInfo => SparkStageInfo, TaskInfo => SparkTaskInfo, SparkListenerExecutorMetricsUpdate, SparkListenerTaskEnd, SparkListenerTaskStart, TaskLocality}
+import org.apache.spark.storage.{
+    RDDInfo => SparkRDDInfo,
+    StorageLevel => SparkStorageLevel,
+    BlockStatus => SparkBlockStatus,
+    RDDBlockId,
+    BlockId
+}
+import org.apache.spark.scheduler.{
+    StageInfo => SparkStageInfo,
+    TaskInfo => SparkTaskInfo,
+    SparkListenerExecutorMetricsUpdate,
+    SparkListenerTaskEnd,
+    SparkListenerTaskStart,
+    TaskLocality
+}
 
 case class BrokenRDDInfo(id: Int,
                          name: String,
