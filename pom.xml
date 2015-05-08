@@ -198,6 +198,11 @@
       <artifactId>salat-core_${scala.prefix}</artifactId>
       <version>${salat.version}</version>
     </dependency>
+    <!--<dependency>-->
+      <!--<groupId>io.github.raptros</groupId>-->
+      <!--<artifactId>the-bson</artifactId>-->
+      <!--<version>0.1</version>-->
+    <!--</dependency>-->
     <dependency>
       <groupId>org.scalatest</groupId>
       <artifactId>scalatest_${scala.prefix}</artifactId>

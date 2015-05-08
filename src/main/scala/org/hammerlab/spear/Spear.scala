@@ -2,9 +2,10 @@
 package org.hammerlab.spear
 
 import java.util.Properties
+import com.mongodb.DBObject
+import com.mongodb.casbah.Imports.MongoDBObject
+
 import com.mongodb.casbah.{MongoCollection, MongoClient}
-import com.novus.salat._
-import com.novus.salat.global._
 import scala.collection.JavaConversions._
 
 import org.apache.spark.{
@@ -57,6 +58,61 @@ import org.apache.spark.scheduler.{
     SparkListenerTaskStart
 }
 import org.apache.spark.scheduler.cluster.{ExecutorInfo => SparkExecutorInfo}
+
+object Mongo {
+  def isCaseClass(p: AnyRef with Product): Boolean = p.getClass.getInterfaces.contains(classOf[Product])
+  def isTuple(x: AnyRef): Boolean = x.getClass.getName.startsWith("scala.Tuple")
+  def to(o: Any): DBObject = {
+    val builder = MongoDBObject.newBuilder
+    o match {
+      case p: AnyRef with Product if isCaseClass(p) =>
+        val pi = p.productIterator.toList
+        val fields = p.getClass.getDeclaredFields.toList
+        pi.zip(fields).map {
+          case (value, field) =>
+            toValue(value).foreach(builder += field.getName -> _)
+        }
+      case m: Map[_, _] =>
+        builder ++= (for {
+          (k,v) <- m.toList
+          value <- toValue(v)
+        } yield {
+            (k.toString, value)
+          })
+      case _ => throw new IllegalArgumentException(s"Can't convert $o to DBObject")
+    }
+    builder.result()
+  }
+
+  def toValue(o: Any): Option[Any] = {
+    o match {
+      case o if o == null => None
+      case o: Option[_] => o.flatMap(toValue)
+      case t: AnyRef with Product if isTuple(t) => Some(t.productIterator.flatMap(toValue).toList)
+      case p: AnyRef with Product if isCaseClass(p) =>
+        val builder = MongoDBObject.newBuilder
+        p.productIterator.toList.zip(p.getClass.getDeclaredFields.toList).foreach {
+          case (value, field) =>
+            toValue(value).foreach(builder += field.getName -> _)
+        }
+        Some(builder.result())
+      case n: Number => Some(n)
+      case s: String => Some(s)
+      case m: Map[_, _] =>
+        val builder = MongoDBObject.newBuilder
+        builder ++= (for {
+          (k,v) <- m.toList
+          value <- toValue(v)
+        } yield {
+            (k.toString, value)
+        })
+        Some(builder.result())
+      case it: Iterable[_] => Some(it.flatMap(toValue))
+      case arr: Array[_] => Some(arr.flatMap(toValue))
+      case b: Boolean => Some(b)
+    }
+  }
+}
 
 
 case class TaskInfo(taskId: Long,
@@ -122,18 +178,41 @@ object StageInfo {
     )
 }
 
-case class InputMetrics(bytesRead: Long, recordsRead: Long)
+case class InputMetrics(bytesRead: Long,
+                        recordsRead: Long) {
+  def toMongo: DBObject = MongoDBObject(
+    "bytesRead" -> bytesRead,
+    "recordsRead" -> recordsRead
+  )
+}
 object InputMetrics {
   def apply(i: SparkInputMetrics): InputMetrics = new InputMetrics(i.bytesRead, i.recordsRead)
+  def fromMongo(o: DBObject): InputMetrics =
+    new InputMetrics(
+      o.get("bytesRead").asInstanceOf[Long],
+      o.get("recordsRead").asInstanceOf[Long]
+    )
 }
 
-case class OutputMetrics(bytesWritten: Long, recordsWritten: Long)
+case class OutputMetrics(bytesWritten: Long,
+                         recordsWritten: Long) {
+  def toMongo: DBObject = MongoDBObject(
+    "bytesWritten" -> bytesWritten,
+    "recordsWritten" -> recordsWritten
+  )
+}
 object OutputMetrics {
   def apply(o: SparkOutputMetrics): OutputMetrics =
     new OutputMetrics(
       o.bytesWritten,
       o.recordsWritten
     )
+
+  def fromMongo(o: DBObject): OutputMetrics =
+    new OutputMetrics(
+      o.get("bytesWritten").asInstanceOf[Long],
+      o.get("recordsWritten").asInstanceOf[Long
+]    )
 }
 
 case class ShuffleReadMetrics(remoteBlocksFetched: Int,
@@ -141,7 +220,17 @@ case class ShuffleReadMetrics(remoteBlocksFetched: Int,
                               fetchWaitTime: Long,
                               remoteBytesRead: Long,
                               localBytesRead: Long,
-                              recordsRead: Long)
+                              recordsRead: Long) {
+  def toMongo: DBObject = MongoDBObject(
+    "remoteBlocksFetched" -> remoteBlocksFetched,
+    "localBlocksFetched" -> localBlocksFetched,
+    "fetchWaitTime" -> fetchWaitTime,
+    "remoteBytesRead" -> remoteBytesRead,
+    "localBytesRead" -> localBytesRead,
+    "recordsRead" -> recordsRead
+  )
+
+}
 object ShuffleReadMetrics {
   def apply(s: SparkShuffleReadMetrics): ShuffleReadMetrics =
     new ShuffleReadMetrics(
@@ -152,9 +241,27 @@ object ShuffleReadMetrics {
       s.localBytesRead,
       s.recordsRead
     )
+
+  def fromMongo(o: DBObject): ShuffleReadMetrics =
+    new ShuffleReadMetrics(
+      o.get("remoteBlocksFetched").asInstanceOf[Int],
+      o.get("localBlocksFetched").asInstanceOf[Int],
+      o.get("fetchWaitTime").asInstanceOf[Long],
+      o.get("remoteBytesRead").asInstanceOf[Long],
+      o.get("localBytesRead").asInstanceOf[Long],
+      o.get("recordsRead").asInstanceOf[Long
+]    )
 }
 
-case class ShuffleWriteMetrics(shuffleBytesWritten: Long, shuffleWriteTime: Long, shuffleRecordsWritten: Long)
+case class ShuffleWriteMetrics(shuffleBytesWritten: Long,
+                               shuffleWriteTime: Long,
+                               shuffleRecordsWritten: Long) {
+  def toMongo: DBObject = MongoDBObject(
+    "shuffleBytesWritten" -> shuffleBytesWritten,
+    "shuffleWriteTime" -> shuffleWriteTime,
+    "shuffleRecordsWritten" -> shuffleRecordsWritten
+  )
+}
 object ShuffleWriteMetrics {
   def apply(s: SparkShuffleWriteMetrics): ShuffleWriteMetrics =
     new ShuffleWriteMetrics(
@@ -162,6 +269,13 @@ object ShuffleWriteMetrics {
       s.shuffleWriteTime,
       s.shuffleRecordsWritten
     )
+
+  def fromMongo(o: DBObject): ShuffleWriteMetrics =
+    new ShuffleWriteMetrics(
+      o.get("shuffleBytesWritten").asInstanceOf[Long],
+      o.get("shuffleWriteTime").asInstanceOf[Long],
+      o.get("shuffleRecordsWritten").asInstanceOf[Long
+]    )
 }
 
 case class BlockStatus(storageLevel: StorageLevel,
@@ -191,7 +305,29 @@ case class TaskMetrics(hostname: String,
                        outputMetrics: Option[OutputMetrics],
                        shuffleReadMetrics: Option[ShuffleReadMetrics],
                        shuffleWriteMetrics: Option[ShuffleWriteMetrics],
-                       updatedBlocks: Option[Seq[(BlockId, BlockStatus)]])
+                       updatedBlocks: Option[Seq[(BlockId, BlockStatus)]]) {
+
+  def mongoFields: List[(String, Any)] = List(
+    "hostname" -> hostname,
+    "executorDeserializeTime" -> executorDeserializeTime,
+    "executorRunTime" -> executorRunTime,
+    "resultSize" -> resultSize,
+    "jvmGCTime" -> jvmGCTime,
+    "resultSerializationTime" -> resultSerializationTime,
+    "memoryBytesSpilled" -> memoryBytesSpilled,
+    "diskBytesSpilled" -> diskBytesSpilled
+  ) ++ List(
+    inputMetrics.map("inputMetrics" -> _.toMongo),
+    outputMetrics.map("outputMetrics" -> _.toMongo),
+    shuffleReadMetrics.map("shuffleReadMetrics" -> _.toMongo),
+    shuffleWriteMetrics.map("shuffleWriteMetrics" -> _.toMongo),
+    updatedBlocks.map("updatedBlocks" -> _)
+  ).flatten
+
+  def toMongo(): DBObject = {
+    MongoDBObject(mongoFields: _*)
+  }
+}
 
 object TaskMetrics {
   def apply(t: SparkTaskMetrics): TaskMetrics =
@@ -405,8 +541,7 @@ class Spear(sc: SparkContext,
   sc.addSparkListener(this)
 
   def serializeAndInsert[T <: AnyRef](t: T, collection: MongoCollection)(implicit m: Manifest[T]): Unit = {
-    val dbo = grater[T].asDBObject(t)
-    collection.insert(dbo)
+    collection.insert(Mongo.to(t))
   }
 
   override def onStageCompleted(stageCompleted: SparkListenerStageCompleted): Unit = {
