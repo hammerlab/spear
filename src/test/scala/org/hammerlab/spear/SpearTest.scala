@@ -99,48 +99,8 @@ case class T(as: List[A])
 
 class SpearTest extends FunSuite with Matchers {
 
-  implicit val ctx = new Context {
-    override val name: String = "TestContext"
-  }
-  ctx.registerClassLoader(Thread.currentThread().getContextClassLoader())
-
-  ctx.registerCustomTransformer(new CustomTransformer[TaskMetrics, DBObject]() {
-    override def deserialize(b: DBObject): TaskMetrics = {
-      new TaskMetrics(
-        b.get("hostname").asInstanceOf[String],
-        b.get("executorDeserializeTime").asInstanceOf[Long],
-        b.get("executorRunTime").asInstanceOf[Long],
-        b.get("resultSize").asInstanceOf[Long],
-        b.get("jvmGCTime").asInstanceOf[Long],
-        b.get("resultSerializationTime").asInstanceOf[Long],
-        b.get("memoryBytesSpilled").asInstanceOf[Long],
-        b.get("diskBytesSpilled").asInstanceOf[Long],
-        Option(b.get("inputMetrics")).map(_.asInstanceOf[DBObject]).map(InputMetrics.fromMongo),
-        Option(b.get("outputMetrics")).map(_.asInstanceOf[DBObject]).map(OutputMetrics.fromMongo),
-        Option(b.get("shuffleReadMetrics")).map(_.asInstanceOf[DBObject]).map(ShuffleReadMetrics.fromMongo),
-        Option(b.get("shuffleWriteMetrics")).map(_.asInstanceOf[DBObject]).map(ShuffleWriteMetrics.fromMongo),
-        None
-      )
-    }
-
-    override def serialize(a: TaskMetrics): DBObject = {
-      a.toMongo
-    }
-  })
-
-  ctx.registerCustomTransformer(new CustomTransformer[InputMetrics, DBObject]() {
-    override def deserialize(b: DBObject): InputMetrics = {
-      InputMetrics.fromMongo(b)
-    }
-
-    override def serialize(a: InputMetrics): DBObject = {
-      a.toMongo
-    }
-  })
-
   val client = MongoClient("localhost", 27017)
 
-  //println(s"Creating database for appplication: $applicationId")
   val db = client("test")
   val collection = db("test")
   collection.drop()
