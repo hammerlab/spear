@@ -179,40 +179,19 @@ object StageInfo {
 }
 
 case class InputMetrics(bytesRead: Long,
-                        recordsRead: Long) {
-  def toMongo: DBObject = MongoDBObject(
-    "bytesRead" -> bytesRead,
-    "recordsRead" -> recordsRead
-  )
-}
+                        recordsRead: Long)
 object InputMetrics {
   def apply(i: SparkInputMetrics): InputMetrics = new InputMetrics(i.bytesRead, i.recordsRead)
-  def fromMongo(o: DBObject): InputMetrics =
-    new InputMetrics(
-      o.get("bytesRead").asInstanceOf[Long],
-      o.get("recordsRead").asInstanceOf[Long]
-    )
 }
 
 case class OutputMetrics(bytesWritten: Long,
-                         recordsWritten: Long) {
-  def toMongo: DBObject = MongoDBObject(
-    "bytesWritten" -> bytesWritten,
-    "recordsWritten" -> recordsWritten
-  )
-}
+                         recordsWritten: Long)
 object OutputMetrics {
   def apply(o: SparkOutputMetrics): OutputMetrics =
     new OutputMetrics(
       o.bytesWritten,
       o.recordsWritten
     )
-
-  def fromMongo(o: DBObject): OutputMetrics =
-    new OutputMetrics(
-      o.get("bytesWritten").asInstanceOf[Long],
-      o.get("recordsWritten").asInstanceOf[Long
-]    )
 }
 
 case class ShuffleReadMetrics(remoteBlocksFetched: Int,
@@ -220,17 +199,7 @@ case class ShuffleReadMetrics(remoteBlocksFetched: Int,
                               fetchWaitTime: Long,
                               remoteBytesRead: Long,
                               localBytesRead: Long,
-                              recordsRead: Long) {
-  def toMongo: DBObject = MongoDBObject(
-    "remoteBlocksFetched" -> remoteBlocksFetched,
-    "localBlocksFetched" -> localBlocksFetched,
-    "fetchWaitTime" -> fetchWaitTime,
-    "remoteBytesRead" -> remoteBytesRead,
-    "localBytesRead" -> localBytesRead,
-    "recordsRead" -> recordsRead
-  )
-
-}
+                              recordsRead: Long)
 object ShuffleReadMetrics {
   def apply(s: SparkShuffleReadMetrics): ShuffleReadMetrics =
     new ShuffleReadMetrics(
@@ -241,27 +210,11 @@ object ShuffleReadMetrics {
       s.localBytesRead,
       s.recordsRead
     )
-
-  def fromMongo(o: DBObject): ShuffleReadMetrics =
-    new ShuffleReadMetrics(
-      o.get("remoteBlocksFetched").asInstanceOf[Int],
-      o.get("localBlocksFetched").asInstanceOf[Int],
-      o.get("fetchWaitTime").asInstanceOf[Long],
-      o.get("remoteBytesRead").asInstanceOf[Long],
-      o.get("localBytesRead").asInstanceOf[Long],
-      o.get("recordsRead").asInstanceOf[Long
-]    )
 }
 
 case class ShuffleWriteMetrics(shuffleBytesWritten: Long,
                                shuffleWriteTime: Long,
-                               shuffleRecordsWritten: Long) {
-  def toMongo: DBObject = MongoDBObject(
-    "shuffleBytesWritten" -> shuffleBytesWritten,
-    "shuffleWriteTime" -> shuffleWriteTime,
-    "shuffleRecordsWritten" -> shuffleRecordsWritten
-  )
-}
+                               shuffleRecordsWritten: Long)
 object ShuffleWriteMetrics {
   def apply(s: SparkShuffleWriteMetrics): ShuffleWriteMetrics =
     new ShuffleWriteMetrics(
@@ -269,13 +222,6 @@ object ShuffleWriteMetrics {
       s.shuffleWriteTime,
       s.shuffleRecordsWritten
     )
-
-  def fromMongo(o: DBObject): ShuffleWriteMetrics =
-    new ShuffleWriteMetrics(
-      o.get("shuffleBytesWritten").asInstanceOf[Long],
-      o.get("shuffleWriteTime").asInstanceOf[Long],
-      o.get("shuffleRecordsWritten").asInstanceOf[Long
-]    )
 }
 
 case class BlockStatus(storageLevel: StorageLevel,
@@ -305,29 +251,7 @@ case class TaskMetrics(hostname: String,
                        outputMetrics: Option[OutputMetrics],
                        shuffleReadMetrics: Option[ShuffleReadMetrics],
                        shuffleWriteMetrics: Option[ShuffleWriteMetrics],
-                       updatedBlocks: Option[Seq[(BlockId, BlockStatus)]]) {
-
-  def mongoFields: List[(String, Any)] = List(
-    "hostname" -> hostname,
-    "executorDeserializeTime" -> executorDeserializeTime,
-    "executorRunTime" -> executorRunTime,
-    "resultSize" -> resultSize,
-    "jvmGCTime" -> jvmGCTime,
-    "resultSerializationTime" -> resultSerializationTime,
-    "memoryBytesSpilled" -> memoryBytesSpilled,
-    "diskBytesSpilled" -> diskBytesSpilled
-  ) ++ List(
-    inputMetrics.map("inputMetrics" -> _.toMongo),
-    outputMetrics.map("outputMetrics" -> _.toMongo),
-    shuffleReadMetrics.map("shuffleReadMetrics" -> _.toMongo),
-    shuffleWriteMetrics.map("shuffleWriteMetrics" -> _.toMongo),
-    updatedBlocks.map("updatedBlocks" -> _)
-  ).flatten
-
-  def toMongo(): DBObject = {
-    MongoDBObject(mongoFields: _*)
-  }
-}
+                       updatedBlocks: Option[Seq[(BlockId, BlockStatus)]])
 
 object TaskMetrics {
   def apply(t: SparkTaskMetrics): TaskMetrics =
@@ -405,7 +329,10 @@ object TaskEndEvent {
 object Props {
   type Props = Map[String, String]
   def apply(properties: Properties): Props =
-    properties.stringPropertyNames().map(name => name -> properties.getProperty(name)).toMap
+    properties
+        .stringPropertyNames()
+        .map(name => name -> properties.getProperty(name))
+        .toMap
 }
 
 import Props.Props
