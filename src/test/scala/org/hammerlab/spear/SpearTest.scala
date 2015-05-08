@@ -81,32 +81,6 @@ case class TestShuffleWriteMetrics(override val shuffleBytesWritten: Long,
                                    override val shuffleWriteTime: Long,
                                    override val shuffleRecordsWritten: Long) extends SparkShuffleWriteMetrics
 
-case class A(n: Int)
-case class B(a: A)
-case class C(a: (Int, A))
-case class D(as: List[(Int, A)])
-case class E(a: (Int, Int, A))
-case class F(as: List[(Int, Int, A)])
-
-case class G(a: (Long, Int, Int, A))
-case class H(as: List[(Long, Int, Int, A)])
-
-case class I(name: String, a: (Long, Int, Int, A))
-case class J(name: String, as: List[(Long, Int, Int, A)])
-
-case class K(name: String, as: List[(Long, Int, Int, TaskMetrics)])
-case class L(name: String, as: List[(Long, Int, Int, InputMetrics)])
-
-case class M(a: Option[A])
-case class N(name: String, as: List[(Long, Int, Int, M)])
-case class O(name: String, as: List[M])
-
-case class P(as: List[(Long, Int, Int, M)])
-case class Q(as: List[M])
-case class R(as: List[(Int, M)])
-case class S(as: List[(Int, Int, M)])
-
-case class T(as: List[A])
 
 class SpearTest extends FunSuite with Matchers {
 
