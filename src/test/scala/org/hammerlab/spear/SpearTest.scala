@@ -210,7 +210,7 @@ class SpearTest extends FunSuite with Matchers {
   }
 
   def testToMongo[T <: AnyRef](t: T): Unit = {
-    val dbo = Mongo.to(t)
+    val dbo = MongoCaseClassSerializer.to(t)
     collection.insert(dbo)
   }
 
