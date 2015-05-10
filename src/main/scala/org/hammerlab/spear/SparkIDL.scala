@@ -96,7 +96,10 @@ case class StageInfo(stageId: Int,
                      name: String,
                      numTasks: Int,
                      rddInfos: Seq[RDDInfo],
-                     details: String)
+                     details: String,
+                     submissionTime: Option[Long],
+                     completionTime: Option[Long],
+                     failureReason: Option[String])
 
 object StageInfo {
   def apply(s: SparkStageInfo): StageInfo =
@@ -106,7 +109,10 @@ object StageInfo {
       s.name,
       s.numTasks,
       s.rddInfos.map(RDDInfo.apply),
-      s.details
+      s.details,
+      s.submissionTime,
+      s.completionTime,
+      s.failureReason
     )
 }
 
@@ -268,6 +274,13 @@ object Props {
 }
 
 import Props.Props
+
+object SparkIDL {
+  type RDDID = Int
+  type StageID = Int
+  type JobID = Int
+  type ExecutorID = String
+}
 
 case class JobStartEvent(jobId: Int,
                          time: Long,
