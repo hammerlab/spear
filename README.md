@@ -2,10 +2,23 @@
 Spear is a [`SparkListener`](https://github.com/apache/spark/blob/v1.3.1/core/src/main/scala/org/apache/spark/scheduler/SparkListener.scala) that maintains info about Spark jobs, stages, tasks, executors, and RDDs in MongoDB.
 
 ## Usage
+
+Build the `Spear` JAR with Maven:
+```
+$ mvn package -DskipTests
+```
+
+Add the shaded `Spear` JAR (`target/spear-with-dependencies-1.0-SNAPSHOT.jar`) to the classpath of your Spark jobs, or to the `--jars` argument to `spark-shell`:
+
+```
+$ $SPARK_HOME/bin/spark-shell --jars /path/to/spear/target/spear-with-dependencies-1.0-SNAPSHOT.jar
+```
+
 Instantiate a `Spear` with your `SparkContext` and (optional) Mongo server hostname/port:
 
 ```
-val spear = new Spear(sc, mongoHost = "localhost", mongoPort = 27017)
+val spear = new Spear(sc, mongoHost, mongoPort)
+val spear = new Spear(sc)  // defaults to localhost:27017
 ```
 
 `Spear` will register itself with `SparkContext` to receive updates about your Spark jobs' progress, and write them to your Mongo instance.
@@ -148,4 +161,3 @@ This is somewhat duplicative with the `tasks` table; the [`SparkListenerExecutor
 	"storageLevel" : 0
 }
 ```
-
