@@ -3,7 +3,7 @@ Spear is a [`SparkListener`](https://github.com/apache/spark/blob/v1.3.1/core/sr
 
 ## Usage
 
-Build the `Spear` JAR with Maven:
+Build the `Spear` JARs with Maven:
 ```
 $ mvn package -DskipTests
 ```
@@ -18,6 +18,9 @@ Instantiate a `Spear` with your `SparkContext` and (optional) Mongo server hostn
 
 ```
 val spear = new Spear(sc, mongoHost, mongoPort)
+```
+xor
+```
 val spear = new Spear(sc)  // defaults to localhost:27017
 ```
 
