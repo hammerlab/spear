@@ -28,7 +28,16 @@ val spear = new Spear(sc)  // defaults to localhost:27017
 
 ## DB Collections
 
-`Spear` creates a database named after your Spark application (as returned by `sc.applicationId`); each application's metrics are siloed in this way. It writes several collections to this database:
+`Spear` creates a database named after your Spark application (as returned by `sc.applicationId`); each application's metrics are siloed in this way. To inspect from a mongo console, connect to your DB accordingly from the shell:
+```
+$ mongo <mongo host>:<mongo port>/<spark app ID>
+```
+or from within a running mongo client:
+```
+> use <spark app ID>
+```
+
+`Spear` writes several collections to this database:
 
 ### `jobs`
 Spark jobs, e.g.:
