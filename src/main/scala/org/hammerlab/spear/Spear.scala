@@ -359,7 +359,13 @@ class Spear(sc: SparkContext,
               "id" -> taskId
             ),
             Map(
-              "$push" -> Map("metrics" -> taskMetrics)
+              "$push" -> Map(
+                "metrics" -> MongoCaseClassSerializer.to(
+                  TaskMetrics(
+                    taskMetrics
+                  )
+                )
+              )
             ),
             upsert = true
           )
