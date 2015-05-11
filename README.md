@@ -164,3 +164,7 @@ This is somewhat duplicative with the `tasks` table; the [`SparkListenerExecutor
 	"storageLevel" : 0
 }
 ```
+
+## Notes/Gotchas
+* On instantiation, `Spear` queries the BlockManager for info about all registered executors, since it has typically missed all [`SparkListenerExecutorAdded`](https://github.com/apache/spark/blob/v1.3.1/core/src/main/scala/org/apache/spark/scheduler/SparkListener.scala#L93-L95) events by the time the `SparkContext` is initialized and passed to the `Spear`.
+* There is currently an uncanny mix of case classes that are serialized to Mongo records and non-type-checked string fields that are updated on those records; porting to statically-checked record types using e.g. [`rogue`](https://github.com/foursquare/rogue) would be nice.
