@@ -24,7 +24,7 @@ trait JobEventsListener extends HasDatabaseService with DBHelpers {
         .where(_.id eqs si.stageId)
         .and(_.attempt eqs si.attemptId)
         .findAndModify(_.name setTo si.name)
-        .and(_.numTasks setTo si.numTasks)
+        .and(_.counts.sub.field(_.numTasks) setTo si.numTasks)
         .and(_.rddIDs setTo si.rddInfos.map(_.id))
         .and(_.details setTo si.details)
         .and(_.time setTo makeDuration(si.submissionTime, si.completionTime))

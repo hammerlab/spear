@@ -28,7 +28,8 @@ trait TaskEventsListener extends HasDatabaseService with DBHelpers {
     val q = Q(Stage)
             .where(_.id eqs taskStart.stageId)
             .and(_.attempt eqs taskStart.stageAttemptId)
-            .findAndModify(_.tasksStarted inc 1)
+            .findAndModify(_.counts.sub.field(_.tasksStarted) inc 1)
+            .and(_.counts.sub.field(_.tasksRunning) inc 1)
 
     db.findAndUpdateOne(q)
   }
@@ -62,11 +63,8 @@ trait TaskEventsListener extends HasDatabaseService with DBHelpers {
       Q(Stage)
       .where(_.id eqs taskEnd.stageId)
       .and(_.attempt eqs taskEnd.stageAttemptId)
-      .findAndModify(s => (
-        if (success) s.tasksSucceeded
-        else s.tasksFailed
-        ) inc 1
-        )
+      .findAndModify(_.counts.sub.field(s => if (success) s.tasksSucceeded else s.tasksFailed) inc 1)
+      .and(_.counts.sub.field(_.tasksRunning) inc -1)
     )
 
     val metricsUpdates = Seq((tid, taskEnd.stageId, taskEnd.stageAttemptId, taskEnd.taskMetrics))

@@ -13,6 +13,14 @@ struct Duration {
   2: optional Time end
 }
 
+struct TaskCounts {
+  1: optional i32 numTasks
+  2: optional i32 tasksStarted
+  3: optional i32 tasksSucceeded
+  4: optional i32 tasksFailed
+  5: optional i32 tasksRunning
+}
+
 struct Job {
   1: optional JobID id
   2: optional Duration time
@@ -29,18 +37,15 @@ struct Stage {
   1: optional StageID id
   2: optional i32 attempt
   3: optional string name
-  4: optional i32 numTasks
-  5: optional list<i32> rddIDs
-  6: optional string details
-  7: optional i32 tasksStarted
-  8: optional i32 tasksSucceeded
-  9: optional i32 tasksFailed
-  10: optional Duration time
-  11: optional string failureReason
-  12: optional map<i64, AccumulableInfo> accumulables
-  13: optional TaskMetrics metrics
-  14: optional map<string, string> properties
-  15: optional JobID jobId
+  4: optional list<i32> rddIDs
+  5: optional string details
+  6: optional TaskCounts counts
+  7: optional Duration time
+  8: optional string failureReason
+  9: optional map<i64, AccumulableInfo> accumulables
+  10: optional TaskMetrics metrics
+  11: optional map<string, string> properties
+  12: optional JobID jobId
 } (
   primary_key="id",
   mongo_collection="stages",
@@ -82,16 +87,6 @@ enum TaskEndReasonType {
   TASK_COMMIT_DENIED = 7,
   EXECUTOR_LOST_FAILURE = 8,
   UNKNOWN_REASON = 9
-
-//  Success = 1,
-//  Resubmitted = 2,
-//  TaskResultLost = 3,
-//  TaskKilled = 4,
-//  FetchFailed = 5,
-//  ExceptionFailure = 6,
-//  TaskCommitDenied = 7,
-//  ExecutorLostFailure = 8,
-//  UnknownReason = 9
 }
 
 struct FetchFailed {
