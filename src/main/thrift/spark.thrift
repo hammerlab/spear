@@ -2,6 +2,7 @@ namespace java org.hammerlab.spear
 
 typedef i32 JobID
 typedef i32 StageID
+typedef i32 StageAttemptID
 typedef i64 TaskID
 typedef string ExecutorID
 typedef i32 RDDID

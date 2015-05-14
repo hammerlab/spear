@@ -8,6 +8,9 @@ import com.foursquare.rogue.spindle.{SpindleQuery => Q}
 import com.foursquare.rogue.spindle.SpindleRogue._
 
 import org.apache.spark.{SparkEnv, SparkContext}
+import org.apache.spark.executor.{
+    TaskMetrics => SparkTaskMetrics
+}
 import org.apache.spark.scheduler.{
     JobSucceeded,
     SparkListenerExecutorRemoved,
@@ -28,7 +31,7 @@ import org.apache.spark.scheduler.{
     SparkListenerTaskEnd,
     SparkListenerTaskStart
 }
-import org.hammerlab.spear.SparkTypedefs.TaskID
+import org.hammerlab.spear.SparkTypedefs.{StageAttemptID, ExecutorID, StageID, TaskID}
 import org.hammerlab.spear.TaskEndReasonType.SUCCESS
 
 class Spear(sc: SparkContext,
@@ -140,14 +143,34 @@ class Spear(sc: SparkContext,
     )
   }
 
+  def getStageMetrics(id: StageID, attempt: StageAttemptID): TaskMetrics = {
+    db.fetchOne(
+      Q(Stage)
+      .where(_.id eqs id)
+      .and(_.attempt eqs attempt)
+      .select(_.metrics)
+    ).flatten.getOrElse(TaskMetrics.newBuilder.result)
+  }
+
+  def getExecutorMetrics(id: ExecutorID): TaskMetrics = {
+    db.fetchOne(
+      Q(Executor)
+      .where(_.id eqs id)
+      .select(_.metrics)
+    ).flatten.getOrElse(TaskMetrics.newBuilder.result)
+  }
+
   override def onTaskEnd(taskEnd: SparkListenerTaskEnd): Unit = {
 
     val reason = SparkIDL.taskEndReason(taskEnd.reason)
     val success = reason.tpeOption().exists(_ == SUCCESS)
     val tm = SparkIDL.taskMetrics(taskEnd.taskMetrics)
+    val ti = taskEnd.taskInfo
+    val tid = ti.taskId
+
     db.findAndUpdateOne(
       Q(Task)
-        .where(_.id eqs taskEnd.taskInfo.taskId)
+        .where(_.id eqs tid)
         .findAndModify(_.taskType setTo taskEnd.taskType)
         .and(_.taskEndReason setTo reason)
         .and(_.metrics push tm)
@@ -163,6 +186,11 @@ class Spear(sc: SparkContext,
           ) inc 1
         )
     )
+
+    val metricsUpdates = Seq((tid, taskEnd.stageId, taskEnd.stageAttemptId, taskEnd.taskMetrics))
+    val metricsDeltas = getTaskMetricsDeltasMap(metricsUpdates)
+    updateStageMetrics(metricsUpdates, metricsDeltas)
+    updateExecutorMetrics(ti.executorId, metricsUpdates, metricsDeltas)
   }
 
   // Job events
@@ -213,6 +241,77 @@ class Spear(sc: SparkContext,
     )
   }
 
+  def getTaskMetricsDeltasMap(metrics: Seq[(TaskID, _, _, SparkTaskMetrics)]): Map[TaskID, TaskMetrics] = {
+    val taskIds = metrics.map(_._1)
+
+    val existingTaskMetrics: Map[TaskID, TaskMetrics] =
+      db.fetch(
+        Q(Task).where(_.id in taskIds).select(_.id, _.metrics.slice(-1))
+      ).flatMap {
+        case (Some(id), Some(metrics :: Nil)) => Some(id, metrics)
+        case _ => None
+      }.toMap
+
+    (for {
+      (taskId, _, _, sparkMetrics) <- metrics
+      newMetrics = SparkIDL.taskMetrics(sparkMetrics)
+      existingMetricsOpt = existingTaskMetrics.get(taskId)
+      deltaMetrics = SparkIDL.combineMetrics(newMetrics, existingMetricsOpt, add = false)
+    } yield {
+        taskId -> deltaMetrics
+    }).toMap
+  }
+
+  def updateStageMetrics(metrics: Seq[(TaskID, StageID, StageAttemptID, SparkTaskMetrics)],
+                         metricsDeltas: Map[TaskID, TaskMetrics]) = {
+
+    val stagesToTaskIDs: Map[(StageID, StageAttemptID), Seq[TaskID]] =
+      metrics.map {
+        case (taskId, stageId, stageAttempt, taskMetrics) =>
+          (stageId, stageAttempt) -> taskId
+      }.groupBy(_._1).mapValues(_.map(_._2))
+
+    for {
+      ((stageId, stageAttempt), taskIDs) <- stagesToTaskIDs
+    } {
+      val existingMetrics = getStageMetrics(stageId, stageAttempt)
+
+      val newMetrics =
+        (for {
+          id <- taskIDs
+          delta <- metricsDeltas.get(id)
+        } yield {
+            delta
+          }).foldLeft(existingMetrics)((e,m) => {
+          SparkIDL.combineMetrics(e, Some(m), add = true)
+        })
+
+      db.findAndUpdateOne(
+        Q(Stage)
+        .where(_.id eqs stageId)
+        .and(_.attempt eqs stageAttempt)
+        .findAndModify(_.metrics setTo newMetrics)
+      )
+    }
+  }
+
+  def updateExecutorMetrics(execID: ExecutorID,
+                            metrics: Seq[(TaskID, StageID, StageAttemptID, SparkTaskMetrics)],
+                            metricsDeltas: Map[TaskID, TaskMetrics]) = {
+
+    val existingExecutorMetrics = getExecutorMetrics(execID)
+
+    val newExecutorMetrics = metricsDeltas.values.toList.foldLeft(existingExecutorMetrics)((e,m) => {
+      SparkIDL.combineMetrics(e, Some(m), add = true)
+    })
+
+    db.findAndUpdateOne(
+      Q(Executor)
+      .where(_.id eqs execID)
+      .findAndModify(_.metrics setTo newExecutorMetrics)
+    )
+  }
+
   // Executor events
   override def onExecutorMetricsUpdate(executorMetricsUpdate: SparkListenerExecutorMetricsUpdate): Unit = {
 
@@ -228,86 +327,20 @@ class Spear(sc: SparkContext,
           )
       }
 
-      val taskIds = executorMetricsUpdate.taskMetrics.map(_._1)
-
-      val metrics = db.fetch(
-        Q(Task).where(_.id in taskIds).select(_.id, _.metrics.slice(-1))
-      )
-
-      val existingTasks: Map[TaskID, TaskMetrics] =
-        metrics.flatMap {
-          case (Some(id), Some(metrics :: Nil)) => Some(id, metrics)
-          case _ => None
-        }.toMap
-
-      val currentMetrics: Map[TaskID, TaskMetrics] =
-        executorMetricsUpdate.taskMetrics.map {
-          case (taskId, stageId, stageAttempt, taskMetrics) =>
-            taskId -> SparkIDL.taskMetrics(taskMetrics)
-        }.toMap
-
-      val metricsDeltas: Map[TaskID, TaskMetrics] =
-        (for {
-          (taskID, metrics) <- currentMetrics
-          existing = existingTasks.get(taskID)
-        } yield {
-            taskID -> SparkIDL.combineMetrics(metrics, existing, add = false)
-          }).toMap
+      val metricsDeltas: Map[TaskID, TaskMetrics] = getTaskMetricsDeltasMap(executorMetricsUpdate.taskMetrics)
 
       // Update Executor metrics
-      val existingExecutorMetrics =
-        db.fetchOne(
-          Q(Executor)
-            .where(_.id eqs executorMetricsUpdate.execId)
-            .select(_.metrics)
-        ).flatten.getOrElse(TaskMetrics.newBuilder.result)
-
-      val newExecutorMetrics = metricsDeltas.values.toList.foldLeft(existingExecutorMetrics)((e,m) => {
-        SparkIDL.combineMetrics(e, Some(m), add = true)
-      })
-
-      db.findAndUpdateOne(
-        Q(Executor)
-          .where(_.id eqs executorMetricsUpdate.execId)
-          .findAndModify(_.metrics setTo newExecutorMetrics)
+      updateExecutorMetrics(
+        executorMetricsUpdate.execId,
+        executorMetricsUpdate.taskMetrics,
+        metricsDeltas
       )
 
       // Update Stage metrics
-      val stagesToTaskIDs =
-        executorMetricsUpdate.taskMetrics.map {
-          case (taskId, stageId, stageAttempt, taskMetrics) =>
-            (stageId, stageAttempt) -> taskId
-        }.groupBy(_._1).mapValues(_.map(_._2))
-
-      for {
-        ((stageId, stageAttempt), taskIDs) <- stagesToTaskIDs
-      } {
-        val existingMetrics =
-          db.fetchOne(
-            Q(Stage)
-              .where(_.id eqs stageId)
-              .and(_.attempt eqs stageAttempt)
-              .select(_.metrics)
-          ).flatten.getOrElse(TaskMetrics.newBuilder.result)
-
-        val newMetrics =
-          (for {
-            id <- taskIDs
-            delta <- metricsDeltas.get(id)
-          } yield {
-              delta
-          }).foldLeft(existingMetrics)((e,m) => {
-            SparkIDL.combineMetrics(e, Some(m), add = true)
-          })
-
-        db.findAndUpdateOne(
-          Q(Stage)
-            .where(_.id eqs stageId)
-            .and(_.attempt eqs stageAttempt)
-            .findAndModify(_.metrics setTo newMetrics)
-        )
-      }
-
+      updateStageMetrics(
+        executorMetricsUpdate.taskMetrics,
+        metricsDeltas
+      )
     }
   }
 
