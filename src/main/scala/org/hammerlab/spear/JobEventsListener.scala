@@ -1,10 +1,10 @@
 package org.hammerlab.spear
 
 import org.apache.spark.scheduler.{JobSucceeded, SparkListenerJobEnd, SparkListenerJobStart, SparkListener}
-import com.foursquare.rogue.spindle.{SpindleQuery => Q, SpindleDatabaseService}
+import com.foursquare.rogue.spindle.{SpindleQuery => Q}
 import com.foursquare.rogue.spindle.SpindleRogue._
 
-trait JobEvents extends HasDatabaseService {
+trait JobEventsListener extends HasDatabaseService {
   this: SparkListener =>
 
   // Job events
