@@ -4,7 +4,7 @@ import org.apache.spark.scheduler.{JobSucceeded, SparkListenerJobEnd, SparkListe
 import com.foursquare.rogue.spindle.{SpindleQuery => Q}
 import com.foursquare.rogue.spindle.SpindleRogue._
 
-trait JobEventsListener extends HasDatabaseService {
+trait JobEventsListener extends HasDatabaseService with DBHelpers {
   this: SparkListener =>
 
   // Job events
@@ -41,16 +41,7 @@ trait JobEventsListener extends HasDatabaseService {
 
     })
 
-    val rdds = jobStart.stageInfos.flatMap(_.rddInfos).map(ri => {
-      RDD.newBuilder
-      .id(ri.id)
-      .name(ri.name)
-      .numPartitions(ri.numPartitions)
-      .storageLevel(SparkIDL.storageLevel(ri.storageLevel))
-      .result()
-    })
-
-    db.insertAll(rdds)
+    upsertRDDs(jobStart.stageInfos.flatMap(_.rddInfos))
   }
 
   override def onJobEnd(jobEnd: SparkListenerJobEnd): Unit = {

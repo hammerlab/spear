@@ -4,7 +4,7 @@ import org.apache.spark.scheduler.{SparkListenerStageCompleted, SparkListenerSta
 import com.foursquare.rogue.spindle.{SpindleQuery => Q}
 import com.foursquare.rogue.spindle.SpindleRogue._
 
-trait StageEventsListener extends HasDatabaseService {
+trait StageEventsListener extends HasDatabaseService with DBHelpers {
   this: SparkListener =>
 
   // Stage events
@@ -29,23 +29,7 @@ trait StageEventsListener extends HasDatabaseService {
       .and(_.jobId setTo jobIdOpt)
     )
 
-    // TODO(ryan): verify whether this will lead to duplicate RDD records, e.g.
-    // if stages share an RDD; switch to upserting RDD records one by one
-    // instead if so.
-    db.insertAll(
-      si.rddInfos.map(ri => {
-        RDD.newBuilder
-        .id(ri.id)
-        .name(ri.name)
-        .numPartitions(ri.numPartitions)
-        .storageLevel(SparkIDL.storageLevel(ri.storageLevel))
-        .numCachedPartitions(ri.numCachedPartitions)
-        .memSize(ri.memSize)
-        .diskSize(ri.diskSize)
-        .tachyonSize(ri.tachyonSize)
-        .result()
-      })
-    )
+    upsertRDDs(si)
   }
 
   override def onStageCompleted(stageCompleted: SparkListenerStageCompleted): Unit = {

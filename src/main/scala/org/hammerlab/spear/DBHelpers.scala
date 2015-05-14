@@ -2,6 +2,8 @@ package org.hammerlab.spear
 
 import com.foursquare.rogue.spindle.{SpindleQuery => Q}
 import com.foursquare.rogue.spindle.SpindleRogue._
+import org.apache.spark.scheduler.StageInfo
+import org.apache.spark.storage.RDDInfo
 import org.hammerlab.spear.SparkTypedefs.{TaskID, ExecutorID, StageAttemptID, StageID}
 import org.apache.spark.executor.{
   TaskMetrics => SparkTaskMetrics
@@ -97,5 +99,26 @@ trait DBHelpers extends HasDatabaseService {
     )
   }
 
+  def upsertRDD(ri: RDDInfo): Unit = {
+    db.findAndUpsertOne(
+      Q(RDD)
+      .where(_.id eqs ri.id)
+      .findAndModify(_.name setTo ri.name)
+      .and(_.numPartitions setTo ri.numPartitions)
+      .and(_.storageLevel setTo SparkIDL.storageLevel(ri.storageLevel))
+      .and(_.numCachedPartitions setTo ri.numCachedPartitions)
+      .and(_.memSize setTo ri.memSize)
+      .and(_.diskSize setTo ri.diskSize)
+      .and(_.tachyonSize setTo ri.tachyonSize)
+    )
+  }
+
+  def upsertRDDs(si: StageInfo): Unit = {
+    si.rddInfos.foreach(upsertRDD)
+  }
+
+  def upsertRDDs(rddInfos: Seq[RDDInfo]): Unit = {
+    rddInfos.foreach(upsertRDD)
+  }
 
 }
