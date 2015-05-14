@@ -30,13 +30,13 @@ class Spear(sc: SparkContext,
     override def indexCache = None
   }
 
-  sc.addSparkListener(this)
-
   // Add executors
   db.insertAll(
     SparkEnv.get.blockManager.master.getMemoryStatus.keySet.toList.map(b =>
-        Executor.newBuilder.id(b.executorId).host(b.host).port(b.port).result()
+      Executor.newBuilder.id(b.executorId).host(b.host).port(b.port).result()
     )
   )
+
+  sc.addSparkListener(this)
 
 }
