@@ -32,6 +32,19 @@ trait TaskEventsListener extends HasDatabaseService with DBHelpers {
             .and(_.counts.sub.field(_.tasksRunning) inc 1)
 
     db.findAndUpdateOne(q)
+
+    db.fetchOne(
+      Q(StageJobJoin)
+        .where(_.stageId eqs taskStart.stageId)
+        .select(_.jobId)
+    ).flatten.foreach(jobId => {
+      db.findAndUpdateOne(
+        Q(Job)
+          .where(_.id eqs jobId)
+          .findAndModify(_.counts.sub.field(_.tasksStarted) inc 1)
+          .and(_.counts.sub.field(_.tasksRunning) inc 1)
+      )
+    })
   }
 
   override def onTaskGettingResult(taskGettingResult: SparkListenerTaskGettingResult): Unit = {
@@ -66,6 +79,19 @@ trait TaskEventsListener extends HasDatabaseService with DBHelpers {
       .findAndModify(_.counts.sub.field(s => if (success) s.tasksSucceeded else s.tasksFailed) inc 1)
       .and(_.counts.sub.field(_.tasksRunning) inc -1)
     )
+
+    db.fetchOne(
+      Q(StageJobJoin)
+        .where(_.stageId eqs taskEnd.stageId)
+        .select(_.jobId)
+    ).flatten.foreach(jobId => {
+      db.findAndUpdateOne(
+        Q(Job)
+          .where(_.id eqs jobId)
+          .findAndModify(_.counts.sub.field(s => if (success) s.tasksSucceeded else s.tasksFailed) inc 1)
+          .and(_.counts.sub.field(_.tasksRunning) inc -1)
+      )
+    })
 
     val metricsUpdates = Seq((tid, taskEnd.stageId, taskEnd.stageAttemptId, taskEnd.taskMetrics))
     val metricsDeltas = getTaskMetricsDeltasMap(metricsUpdates)

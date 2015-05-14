@@ -10,13 +10,18 @@ trait JobEventsListener extends HasDatabaseService with DBHelpers {
   // Job events
   override def onJobStart(jobStart: SparkListenerJobStart): Unit = {
 
+    val numTasks = jobStart.stageInfos.map(_.numTasks).sum
+
     val job = Job.newBuilder
               .id(jobStart.jobId)
               .time(makeDuration(jobStart.time))
               .stageIDs(jobStart.stageIds)
               .properties(SparkIDL.properties(jobStart.properties))
+              .counts(TaskCounts.newBuilder.numTasks(numTasks).result)
               .result()
     db.insert(job)
+
+
 
     jobStart.stageInfos.foreach(si => {
       db.findAndUpsertOne(

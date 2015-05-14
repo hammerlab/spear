@@ -27,6 +27,7 @@ struct Job {
   3: optional list<i32> stageIDs
   4: optional bool succeeded
   5: optional map<string, string> properties
+  6: optional TaskCounts counts
 } (
   primary_key="id",
   mongo_collection="jobs",
