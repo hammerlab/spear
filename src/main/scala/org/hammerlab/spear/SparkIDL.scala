@@ -167,10 +167,34 @@ object SparkIDL {
       .resultSerializationTime(a.resultSerializationTime + (if (add) 1 else -1)*b.map(_.resultSerializationTime).getOrElse(0L))
       .memoryBytesSpilled(a.memoryBytesSpilled + (if (add) 1 else -1)*b.map(_.memoryBytesSpilled).getOrElse(0L))
       .diskBytesSpilled(a.diskBytesSpilled + (if (add) 1 else -1)*b.map(_.diskBytesSpilled).getOrElse(0L))
-      .inputMetrics(a.inputMetricsOption.map(combineMetrics(_, b.flatMap(_.inputMetricsOption), add = add)))
-      .outputMetrics(a.outputMetricsOption.map(combineMetrics(_, b.flatMap(_.outputMetricsOption), add = add)))
-      .shuffleReadMetrics(a.shuffleReadMetricsOption.map(combineMetrics(_, b.flatMap(_.shuffleReadMetricsOption), add = add)))
-      .shuffleWriteMetrics(a.shuffleWriteMetricsOption.map(combineMetrics(_, b.flatMap(_.shuffleWriteMetricsOption), add = add)))
+      .inputMetrics(
+        combineMetrics(
+          a.inputMetricsOption.getOrElse(InputMetrics.newBuilder.result),
+          b.flatMap(_.inputMetricsOption),
+          add = add
+        )
+      )
+      .outputMetrics(
+        combineMetrics(
+          a.outputMetricsOption.getOrElse(OutputMetrics.newBuilder.result),
+          b.flatMap(_.outputMetricsOption),
+          add = add
+        )
+      )
+      .shuffleReadMetrics(
+        combineMetrics(
+          a.shuffleReadMetricsOption.getOrElse(ShuffleReadMetrics.newBuilder.result),
+          b.flatMap(_.shuffleReadMetricsOption),
+          add = add
+        )
+      )
+      .shuffleWriteMetrics(
+        combineMetrics(
+          a.shuffleWriteMetricsOption.getOrElse(ShuffleWriteMetrics.newBuilder.result),
+          b.flatMap(_.shuffleWriteMetricsOption),
+          add = add
+        )
+      )
       .result()
   }
 
