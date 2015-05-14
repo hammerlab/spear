@@ -1,12 +1,14 @@
 
 package org.hammerlab.spear
 
-import com.mongodb.casbah.{MongoCollection, MongoClient}
-import com.mongodb.casbah.Implicits._
+import com.foursquare.rogue.spindle.{SpindleDBCollectionFactory, SpindleDatabaseService}
+import com.foursquare.spindle.UntypedMetaRecord
+import com.mongodb.{DB, MongoClient}
+import com.foursquare.rogue.spindle.{SpindleQuery => Q}
+import com.foursquare.rogue.spindle.SpindleRogue._
 
 import org.apache.spark.{SparkEnv, SparkContext}
 import org.apache.spark.scheduler.{
-    StageInfo => SparkStageInfo,
     JobSucceeded,
     SparkListenerExecutorRemoved,
     SparkListenerExecutorAdded,
@@ -26,60 +28,8 @@ import org.apache.spark.scheduler.{
     SparkListenerTaskEnd,
     SparkListenerTaskStart
 }
-import org.hammerlab.spear.SparkIDL.{ExecutorID, JobID, StageID, RDDID}
-
-
-case class AccumulableInfo(id: Long,
-                           name: String,
-                           update: Option[String], // represents a partial update within a task
-                           value: String)
-
-case class Job(id: JobID,
-               time: Long,
-               stageIDs: Seq[StageID],
-               finishTime: Option[Long] = None,
-               succeeded: Option[Boolean] = None)
-
-case class Stage(id: StageID,
-                 attempt: Int,
-                 name: String,
-                 numTasks: Int,
-                 rdds: Seq[RDDID],
-                 details: String,
-                 tasksStarted: Option[Int] = None,
-                 tasksSucceeded: Option[Int] = None,
-                 tasksFailed: Option[Int] = None,
-                 submissionTime: Option[Long] = None,
-                 completionTime: Option[Long] = None,
-                 failureReason: Option[String] = None,
-                 accumulables: Option[Map[Long, AccumulableInfo]] = None)  // TODO(ryan): implement
-
-case class RDD(id: RDDID,
-               name: String,
-               numPartitions: Int,
-               storageLevel: Int)  // TODO(ryan): enums
-
-case class Executor(id: ExecutorID,
-                    host: String,
-                    //port: Int,
-                    totalCores: Option[Int] = None,
-                    removedAt: Option[Long] = None,
-                    removedReason: Option[String] = None,
-                    logUrlMap: Option[Map[String, String]] = None)
-
-case class Task(id: Long,
-                index: Int,
-                attempt: Int,
-                stageId: StageID,
-                stageAttemptId: Int,
-                launchTime: Long,
-                execId: ExecutorID,
-                taskLocality: Int,
-                speculative: Option[Boolean] = None,
-                gettingResult: Option[Boolean] = None,
-                taskType: Option[String] = None,
-                taskEndReason: Option[TaskEndReason] = None,
-                metrics: Option[TaskMetrics] = None)
+import org.hammerlab.spear.SparkTypedefs.TaskID
+import org.hammerlab.spear.TaskEndReasonType.SUCCESS
 
 class Spear(sc: SparkContext,
             mongoHost: String = "localhost",
@@ -87,315 +37,334 @@ class Spear(sc: SparkContext,
 
   val applicationId = sc.applicationId
 
-  val client = MongoClient(mongoHost, mongoPort)
+  object db extends SpindleDatabaseService(ConcreteDBCollectionFactory)
+
+  object ConcreteDBCollectionFactory extends SpindleDBCollectionFactory {
+    lazy val db: DB = new MongoClient(mongoHost, mongoPort).getDB(applicationId)
+    override def getPrimaryDB(meta: UntypedMetaRecord) = db
+    override def indexCache = None
+  }
+
 
   println(s"Creating database for appplication: $applicationId")
-  val db = client(applicationId)
-
-  val jobs = db("jobs")
-  jobs.ensureIndex(Map("id" -> 1))
-
-  val stages = db("stages")
-  stages.ensureIndex(Map("id" -> 1, "attempt" -> 1))
-
-  val tasks = db("tasks")
-  tasks.ensureIndex(Map("stageId" -> 1, "stageAttemptId" -> 1, "id" -> 1, "attempt" -> 1))
-  tasks.ensureIndex(Map("index" -> 1))
-
-  val taskMetricsColl = db("metrics")
-  taskMetricsColl.ensureIndex(Map("stageId" -> 1, "stageAttemptId" -> 1, "id" -> 1))
-
-  val executors = db("executors")
-  executors.ensureIndex(Map("id" -> 1))
-  executors.ensureIndex(Map("host" -> 1))
-
-  val rdds = db("rdds")
-  rdds.ensureIndex(Map("id" -> 1))
-
-  // Collections
-  val submittedStages = db("stage_starts")
-  val completedStages = db("stage_ends")
-
-  val startedTasks = db("task_starts")
-  val taskGettingResults = db("task_getting_results")
-  val taskEnds = db("task_ends")
-
-  val jobStarts = db("job_starts")
-  val jobEnds = db("job_ends")
-
-  val envUpdates = db("env_updates")
-
-  val blockManagerAdds = db("block_manager_adds")
-  val blockManagerRemoves = db("block_manager_removes")
-
-  val rddUnpersists = db("rdd_unpersists")
-
-  val appStarts = db("app_starts")
-  val appEnds = db("app_ends")
-
-  val executorMetricUpdates = db("executor_updates")
-  val executorAdds = db("executor_adds")
-  val executorRemoves = db("executor_removes")
 
   sc.addSparkListener(this)
 
   // Add executors
-  executors.insert(
+  db.insertAll(
     SparkEnv.get.blockManager.master.getMemoryStatus.keySet.toList.map(b =>
-     MongoCaseClassSerializer.to(
-       Executor(
-         b.executorId,
-         s"${b.host}:${b.port}"
-       )
-     )
-    ):_*
+        Executor.newBuilder.id(b.executorId).host(b.host).port(b.port).result()
+    )
   )
-  def serializeAndInsert[T <: AnyRef](t: T, collection: MongoCollection)(implicit m: Manifest[T]): Unit = {
-    collection.insert(MongoCaseClassSerializer.to(t))
+
+  // Stage events
+  override def onStageSubmitted(stageSubmitted: SparkListenerStageSubmitted): Unit = {
+    val si = stageSubmitted.stageInfo
+    db.findAndUpsertOne(
+      Q(Stage)
+        .where(_.id eqs si.stageId)
+        .and(_.attempt eqs si.attemptId)
+        .findAndModify(_.name setTo si.name)
+        .and(_.numTasks setTo si.numTasks)
+        .and(_.rddIDs setTo si.rddInfos.map(_.id))
+        .and(_.details setTo si.details)
+        .and(_.startTime setTo si.submissionTime)
+        .and(_.endTime setTo si.completionTime)
+        .and(_.failureReason setTo si.failureReason)
+        .and(_.properties setTo SparkIDL.properties(stageSubmitted.properties))
+    )
+
+    // TODO(ryan): verify whether this will lead to duplicate RDD records, e.g.
+    // if stages share an RDD; switch to upserting RDD records one by one
+    // instead if so.
+    db.insertAll(
+      si.rddInfos.map(ri => {
+        RDD.newBuilder
+          .id(ri.id)
+          .name(ri.name)
+          .numPartitions(ri.numPartitions)
+          .storageLevel(SparkIDL.storageLevel(ri.storageLevel))
+          .numCachedPartitions(ri.numCachedPartitions)
+          .memSize(ri.memSize)
+          .diskSize(ri.diskSize)
+          .tachyonSize(ri.tachyonSize)
+          .result()
+      })
+    )
   }
 
   override def onStageCompleted(stageCompleted: SparkListenerStageCompleted): Unit = {
-    upsertStage(stageCompleted.stageInfo)
-  }
-
-  def upsertStage(si: SparkStageInfo): Unit = {
-    stages.update(
-      Map("id" -> si.stageId, "attempt" -> si.attemptId),
-      Map("$set" ->
-        MongoCaseClassSerializer.to(
-          Stage(
-            si.stageId,
-            si.attemptId,
-            si.name,
-            si.numTasks,
-            si.rddInfos.map(_.id),
-            si.details,
-            submissionTime = si.submissionTime,
-            completionTime = si.completionTime,
-            failureReason = si.failureReason
-          )
-        )
-      ),
-      upsert = true
+    val si = stageCompleted.stageInfo
+    db.findAndUpdateOne(
+      Q(Stage)
+        .where(_.id eqs si.stageId)
+        .and(_.attempt eqs si.attemptId)
+        .findAndModify(_.endTime setTo si.completionTime)
+        // submissionTime sometimes doesn't make it into the StageSubmitted
+        // event, likely due to a race on the Spark side.
+        .and(_.startTime setTo si.submissionTime)
+        .and(_.failureReason setTo si.failureReason)
     )
   }
 
-  override def onStageSubmitted(stageSubmitted: SparkListenerStageSubmitted): Unit = {
-    upsertStage(stageSubmitted.stageInfo)
-  }
-
+  // Task events
   override def onTaskStart(taskStart: SparkListenerTaskStart): Unit = {
     val ti = taskStart.taskInfo
-    tasks.insert(
-      MongoCaseClassSerializer.to(
-        Task(
-          ti.taskId,
-          ti.index,
-          ti.attempt,
-          taskStart.stageId,
-          taskStart.stageAttemptId,
-          ti.launchTime,
-          ti.executorId,
-          ti.taskLocality.id,
-          speculative = if (ti.speculative) Some(ti.speculative) else None
-        )
-      )
+    db.insert(
+      Task.newBuilder
+        .id(ti.taskId)
+        .index(ti.index)
+        .attempt(ti.attempt)
+        .stageId(taskStart.stageId)
+        .stageAttemptId(taskStart.stageAttemptId)
+        .startTime(ti.launchTime)
+        .execId(ti.executorId)
+        .taskLocality(TaskLocality.findById(ti.taskLocality.id))
+        .speculative(ti.speculative)
+        .result()
     )
 
-    stages.update(
-      Map("id" -> taskStart.stageId, "attempt" -> taskStart.stageAttemptId),
-      Map("$inc" -> Map("tasksStarted" -> 1))
-    )
+    val q = Q(Stage)
+            .where(_.id eqs taskStart.stageId)
+            .and(_.attempt eqs taskStart.stageAttemptId)
+            .findAndModify(_.tasksStarted inc 1)
+
+    db.findAndUpdateOne(q)
   }
 
   override def onTaskGettingResult(taskGettingResult: SparkListenerTaskGettingResult): Unit = {
-    tasks.update(
-      Map(
-        "index" -> taskGettingResult.taskInfo.index
-      ),
-      Map("$set" ->
-        Map(
-          "gettingResult" -> true
-        )
-      )
+    db.findAndUpdateOne(
+      Q(Task)
+        .where(_.id eqs taskGettingResult.taskInfo.taskId)
+        .findAndModify(_.gettingResult setTo true)
     )
   }
 
   override def onTaskEnd(taskEnd: SparkListenerTaskEnd): Unit = {
-    val reason = TaskEndReason(taskEnd.reason)
-    val reasonObj = MongoCaseClassSerializer.to(reason)
-    val success = reason.success.exists(x => x)
-    serializeAndInsert(TaskEndEvent(taskEnd), taskEnds)
-    val keys = Map(
-      "stageId" -> taskEnd.stageId,
-      "stageAttemptId" -> taskEnd.stageAttemptId,
-      "id" -> taskEnd.taskInfo.taskId,
-      "attempt" -> taskEnd.taskInfo.attempt
-    )
-    val tm = MongoCaseClassSerializer.to(TaskMetrics(taskEnd.taskMetrics))
-    val wr =
-      tasks.update(
-        keys,
-        Map("$set" ->
-          Map(
-            "taskType" -> taskEnd.taskType,
-            "taskEndReason" -> reasonObj,
-            "metrics" -> tm
-          )
-        )
-      )
 
-    if (!wr.isUpdateOfExisting) {
-      System.err.println(s"ERROR: no task updated with keys: $keys")
-    }
-
-    stages.update(
-      Map(
-        "id" -> taskEnd.stageId,
-        "attempt" -> taskEnd.stageAttemptId
-      ),
-      Map("$inc" ->
-        Map(
-          (if (success) "tasksSucceeded" else "tasksFailed") -> 1
-        )
-      )
+    val reason = SparkIDL.taskEndReason(taskEnd.reason)
+    val success = reason.tpeOption().exists(_ == SUCCESS)
+    val tm = SparkIDL.taskMetrics(taskEnd.taskMetrics)
+    db.findAndUpdateOne(
+      Q(Task)
+        .where(_.id eqs taskEnd.taskInfo.taskId)
+        .findAndModify(_.taskType setTo taskEnd.taskType)
+        .and(_.taskEndReason setTo reason)
+        .and(_.metrics push tm)
     )
 
-    taskMetricsColl.update(
-      Map(
-        "stageId" -> taskEnd.stageId,
-        "stageAttemptId" -> taskEnd.stageAttemptId,
-        "id" -> taskEnd.taskInfo.taskId
-      ),
-      Map(
-        "$push" -> Map(
-          "metrics" -> tm
+    db.findAndUpdateOne(
+      Q(Stage)
+        .where(_.id eqs taskEnd.stageId)
+        .and(_.attempt eqs taskEnd.stageAttemptId)
+        .findAndModify(s => (
+            if (success) s.tasksSucceeded
+            else s.tasksFailed
+          ) inc 1
         )
-      ),
-      upsert = true
     )
   }
 
+  // Job events
   override def onJobStart(jobStart: SparkListenerJobStart): Unit = {
 
-    serializeAndInsert(Job(jobStart.jobId, jobStart.time, jobStart.stageIds), jobs)
-    jobStart.stageInfos.map(upsertStage)
+    val job = Job.newBuilder
+              .id(jobStart.jobId)
+              .startTime(jobStart.time)
+              .stageIDs(jobStart.stageIds)
+              .properties(SparkIDL.properties(jobStart.properties))
+              .result()
+    db.insert(job)
 
-    jobStart.stageInfos.flatMap(_.rddInfos).map(rddInfo => {
-      rdds.update(
-        Map("id" -> rddInfo.id),
-        Map(
-          "$set" ->
-            MongoCaseClassSerializer.to(
-              RDD(
-                rddInfo.id,
-                rddInfo.name,
-                rddInfo.numPartitions,
-                rddInfo.storageLevel.toInt
-              )
-            )
-        ),
-        upsert = true
-      )
+    val stages = jobStart.stageInfos.map(si => {
+      Stage.newBuilder
+        .id(si.stageId)
+        .attempt(si.attemptId)
+        .name(si.name)
+        .numTasks(si.numTasks)
+        .rddIDs(si.rddInfos.map(_.id))
+        .details(si.details)
+        .startTime(si.submissionTime)
+        .result()
     })
+
+    // NOTE(ryan): assumes that this happens before the StageSubmitted event,
+    // otherwise we'd get duplicate Stage records.
+    db.insertAll(stages)
+
+    val rdds = jobStart.stageInfos.flatMap(_.rddInfos).map(ri => {
+      RDD.newBuilder
+        .id(ri.id)
+        .name(ri.name)
+        .numPartitions(ri.numPartitions)
+        .storageLevel(SparkIDL.storageLevel(ri.storageLevel))
+        .result()
+    })
+
+    db.insertAll(rdds)
   }
 
   override def onJobEnd(jobEnd: SparkListenerJobEnd): Unit = {
-    jobs.update(
-      Map("id" -> jobEnd.jobId),
-      Map("$set" ->
-        Map(
-          "finishTime" -> Some(jobEnd.time),
-          "succeeded" -> Some(jobEnd.jobResult == JobSucceeded)
-        )
-      )
+    db.findAndUpdateOne(
+      Q(Job)
+        .where(_.id eqs jobEnd.jobId)
+        .findAndModify(_.endTime setTo jobEnd.time)
+        .and(_.succeeded setTo (jobEnd.jobResult == JobSucceeded))
     )
   }
 
-  override def onEnvironmentUpdate(environmentUpdate: SparkListenerEnvironmentUpdate): Unit = {
-    serializeAndInsert(environmentUpdate, envUpdates)
-  }
-
-  override def onBlockManagerAdded(blockManagerAdded: SparkListenerBlockManagerAdded): Unit = {
-    serializeAndInsert(BlockManagerAddedEvent(blockManagerAdded), blockManagerAdds)
-  }
-
-  override def onBlockManagerRemoved(blockManagerRemoved: SparkListenerBlockManagerRemoved): Unit = {
-    serializeAndInsert(BlockManagerRemovedEvent(blockManagerRemoved), blockManagerRemoves)
-  }
-
-  override def onUnpersistRDD(unpersistRDD: SparkListenerUnpersistRDD): Unit = {
-    serializeAndInsert(unpersistRDD, rddUnpersists)
-  }
-
-  override def onApplicationStart(applicationStart: SparkListenerApplicationStart): Unit = {
-    serializeAndInsert(applicationStart, appStarts)
-  }
-
-  override def onApplicationEnd(applicationEnd: SparkListenerApplicationEnd): Unit = {
-    serializeAndInsert(applicationEnd, appEnds)
-  }
-
-  def parseTaskId(taskId: String): Option[(Int, Int)] = {
-    taskId.split('.') match {
-      case Array(id, attempt) =>
-        try {
-          Some((id.toInt, attempt.toInt))
-        } catch {
-          case _ => None
-        }
-      case _ => None
-    }
-  }
-
+  // Executor events
   override def onExecutorMetricsUpdate(executorMetricsUpdate: SparkListenerExecutorMetricsUpdate): Unit = {
+
     if (executorMetricsUpdate.taskMetrics.size > 0) {
+
+      // Update Task records
       executorMetricsUpdate.taskMetrics.map {
         case (taskId, stageId, stageAttempt, taskMetrics) =>
-          taskMetricsColl.update(
-            Map(
-              "stageId" -> stageId,
-              "stageAttemptId" -> stageAttempt,
-              "id" -> taskId
-            ),
-            Map(
-              "$push" -> Map(
-                "metrics" -> MongoCaseClassSerializer.to(
-                  TaskMetrics(
-                    taskMetrics
-                  )
-                )
-              )
-            ),
-            upsert = true
+          db.findAndUpdateOne(
+            Q(Task)
+            .where(_.id eqs taskId)
+            .findAndModify(_.metrics push SparkIDL.taskMetrics(taskMetrics))
           )
       }
+
+      val taskIds = executorMetricsUpdate.taskMetrics.map(_._1)
+
+      val metrics = db.fetch(
+        Q(Task).where(_.id in taskIds).select(_.id, _.metrics.slice(-1))
+      )
+
+      val existingTasks: Map[TaskID, TaskMetrics] =
+        metrics.flatMap {
+          case (Some(id), Some(metrics :: Nil)) => Some(id, metrics)
+          case _ => None
+        }.toMap
+
+      val currentMetrics: Map[TaskID, TaskMetrics] =
+        executorMetricsUpdate.taskMetrics.map {
+          case (taskId, stageId, stageAttempt, taskMetrics) =>
+            taskId -> SparkIDL.taskMetrics(taskMetrics)
+        }.toMap
+
+      val metricsDeltas: Map[TaskID, TaskMetrics] =
+        (for {
+          (taskID, metrics) <- currentMetrics
+          existing = existingTasks.get(taskID)
+        } yield {
+            taskID -> SparkIDL.combineMetrics(metrics, existing, add = false)
+          }).toMap
+
+      // Update Executor metrics
+      val existingExecutorMetrics =
+        db.fetchOne(
+          Q(Executor)
+            .where(_.id eqs executorMetricsUpdate.execId)
+            .select(_.metrics)
+        ).flatten.getOrElse(TaskMetrics.newBuilder.result)
+
+      val newExecutorMetrics = metricsDeltas.values.toList.foldLeft(existingExecutorMetrics)((e,m) => {
+        SparkIDL.combineMetrics(e, Some(m), add = true)
+      })
+
+      db.findAndUpdateOne(
+        Q(Executor)
+          .where(_.id eqs executorMetricsUpdate.execId)
+          .findAndModify(_.metrics setTo newExecutorMetrics)
+      )
+
+      // Update Stage metrics
+      val stagesToTaskIDs =
+        executorMetricsUpdate.taskMetrics.map {
+          case (taskId, stageId, stageAttempt, taskMetrics) =>
+            (stageId, stageAttempt) -> taskId
+        }.groupBy(_._1).mapValues(_.map(_._2))
+
+      for {
+        ((stageId, stageAttempt), taskIDs) <- stagesToTaskIDs
+      } {
+        val existingMetrics =
+          db.fetchOne(
+            Q(Stage)
+              .where(_.id eqs stageId)
+              .and(_.attempt eqs stageAttempt)
+              .select(_.metrics)
+          ).flatten.getOrElse(TaskMetrics.newBuilder.result)
+
+        val newMetrics =
+          (for {
+            id <- taskIDs
+            delta <- metricsDeltas.get(id)
+          } yield {
+              delta
+          }).foldLeft(existingMetrics)((e,m) => {
+            SparkIDL.combineMetrics(e, Some(m), add = true)
+          })
+
+        db.findAndUpdateOne(
+          Q(Stage)
+            .where(_.id eqs stageId)
+            .and(_.attempt eqs stageAttempt)
+            .findAndModify(_.metrics setTo newMetrics)
+        )
+      }
+
     }
   }
 
   override def onExecutorAdded(executorAdded: SparkListenerExecutorAdded): Unit = {
-    val ei = executorAdded.executorInfo
-    executors.insert(
-      MongoCaseClassSerializer.to(
-        Executor(
-          executorAdded.executorId,
-          ei.executorHost,
-          Some(ei.totalCores),
-          logUrlMap = if (ei.logUrlMap.nonEmpty) Some(ei.logUrlMap) else None
-        )
+
+    val (host, portOpt) = executorAdded.executorInfo.executorHost.split(":") match {
+      case Array(host, port) => (host, Some(port.toInt))
+      case Array(host) => (host, None)
+      case _ => throw new Exception(
+        s"Malformed executor host string? ${executorAdded.executorInfo.executorHost}"
       )
+    }
+
+    db.insert(
+      Executor.newBuilder
+        .id(executorAdded.executorId)
+        .host(host)
+        .port(portOpt)
+        .addedAt(executorAdded.time)
+        .totalCores(executorAdded.executorInfo.totalCores)
+        .logUrlMap(executorAdded.executorInfo.logUrlMap)
+        .result()
     )
   }
 
   override def onExecutorRemoved(executorRemoved: SparkListenerExecutorRemoved): Unit = {
-    executors.update(
-      Map("id" -> executorRemoved.executorId),
-      Map("$set" ->
-        Map(
-          "removedAt" -> executorRemoved.time,
-          "removedReason" -> executorRemoved.reason
-        )
-      )
+    db.findAndUpdateOne(
+      Q(Executor)
+        .where(_.id eqs executorRemoved.executorId)
+        .findAndModify(_.removedAt setTo executorRemoved.time)
+        .and(_.removedReason setTo executorRemoved.reason)
     )
   }
+
+  // Misc events
+  override def onEnvironmentUpdate(environmentUpdate: SparkListenerEnvironmentUpdate): Unit = {
+    // TODO(ryan)
+  }
+
+  override def onBlockManagerAdded(blockManagerAdded: SparkListenerBlockManagerAdded): Unit = {
+    // TODO(ryan)
+  }
+
+  override def onBlockManagerRemoved(blockManagerRemoved: SparkListenerBlockManagerRemoved): Unit = {
+    // TODO(ryan)
+  }
+
+  override def onUnpersistRDD(unpersistRDD: SparkListenerUnpersistRDD): Unit = {
+    // TODO(ryan)
+  }
+
+  override def onApplicationStart(applicationStart: SparkListenerApplicationStart): Unit = {
+    // TODO(ryan)
+  }
+
+  override def onApplicationEnd(applicationEnd: SparkListenerApplicationEnd): Unit = {
+    // TODO(ryan)
+  }
+
 }

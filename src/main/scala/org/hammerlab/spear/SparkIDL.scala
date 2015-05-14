@@ -3,17 +3,19 @@ package org.hammerlab.spear
 import java.util.Properties
 import scala.collection.JavaConversions._
 
+import org.hammerlab.spear.TaskEndReasonType._
+
 import org.apache.spark.{
     TaskEndReason => SparkTaskEndReason,
-    Success,
-    UnknownReason,
-    TaskKilled,
-    TaskResultLost,
-    Resubmitted,
-    ExecutorLostFailure,
-    TaskCommitDenied,
-    ExceptionFailure,
-    FetchFailed
+    Success => SparkSuccess,
+    UnknownReason => SparkUnknownReason,
+    TaskKilled => SparkTaskKilled,
+    TaskResultLost => SparkTaskResultLost,
+    Resubmitted => SparkResubmitted,
+    ExecutorLostFailure => SparkExecutorLostFailure,
+    TaskCommitDenied => SparkTaskCommitDenied,
+    ExceptionFailure => SparkExceptionFailure,
+    FetchFailed => SparkFetchFailed
 }
 import org.apache.spark.executor.{
     TaskMetrics => SparkTaskMetrics,
@@ -23,353 +25,238 @@ import org.apache.spark.executor.{
     OutputMetrics => SparkOutputMetrics
 }
 import org.apache.spark.storage.{
-    RDDInfo => SparkRDDInfo,
     StorageLevel => SparkStorageLevel,
     BlockStatus => SparkBlockStatus,
     BlockManagerId => SparkBlockManagerId,
     BlockId
 }
-import org.apache.spark.scheduler.{
-    StageInfo => SparkStageInfo,
-    TaskInfo => SparkTaskInfo,
-    JobSucceeded,
-    SparkListenerExecutorAdded,
-    SparkListenerExecutorMetricsUpdate,
-    SparkListenerBlockManagerRemoved,
-    SparkListenerBlockManagerAdded,
-    SparkListenerJobEnd,
-    SparkListenerJobStart,
-    SparkListenerTaskEnd,
-    SparkListenerTaskStart
-}
-import org.apache.spark.scheduler.cluster.{
-    ExecutorInfo => SparkExecutorInfo
-}
-
-
-case class TaskInfo(taskId: Long,
-                    index: Int,
-                    attempt: Int,
-                    launchTime: Long,
-                    executorId: String,
-                    host: String,
-                    taskLocality: Int,
-                    speculative: Boolean)
-
-object TaskInfo {
-  def apply(t: SparkTaskInfo): TaskInfo =
-    new TaskInfo(
-      t.taskId,
-      t.index,
-      t.attempt,
-      t.launchTime,
-      t.executorId,
-      t.host,
-      t.taskLocality.id,
-      t.speculative
-    )
-}
-
-case class StorageLevel(n: Int)
-
-object StorageLevel {
-  def apply(s: SparkStorageLevel): StorageLevel = new StorageLevel(s.toInt)
-}
-
-case class RDDInfo(id: Int,
-                   name: String,
-                   numPartitions: Int,
-                   storageLevel: StorageLevel)
-
-object RDDInfo {
-  def apply(r: SparkRDDInfo): RDDInfo =
-    new RDDInfo(
-      r.id,
-      r.name,
-      r.numPartitions,
-      StorageLevel(r.storageLevel)
-    )
-}
-
-case class StageInfo(stageId: Int,
-                     attemptId: Int,
-                     name: String,
-                     numTasks: Int,
-                     rddInfos: Seq[RDDInfo],
-                     details: String,
-                     submissionTime: Option[Long],
-                     completionTime: Option[Long],
-                     failureReason: Option[String])
-
-object StageInfo {
-  def apply(s: SparkStageInfo): StageInfo =
-    new StageInfo(
-      s.stageId,
-      s.attemptId,
-      s.name,
-      s.numTasks,
-      s.rddInfos.map(RDDInfo.apply),
-      s.details,
-      s.submissionTime,
-      s.completionTime,
-      s.failureReason
-    )
-}
-
-case class InputMetrics(bytesRead: Long,
-                        recordsRead: Long)
-object InputMetrics {
-  def apply(i: SparkInputMetrics): InputMetrics = new InputMetrics(i.bytesRead, i.recordsRead)
-}
-
-case class OutputMetrics(bytesWritten: Long,
-                         recordsWritten: Long)
-object OutputMetrics {
-  def apply(o: SparkOutputMetrics): OutputMetrics =
-    new OutputMetrics(
-      o.bytesWritten,
-      o.recordsWritten
-    )
-}
-
-case class ShuffleReadMetrics(remoteBlocksFetched: Int,
-                              localBlocksFetched: Int,
-                              fetchWaitTime: Long,
-                              remoteBytesRead: Long,
-                              localBytesRead: Long,
-                              recordsRead: Long)
-object ShuffleReadMetrics {
-  def apply(s: SparkShuffleReadMetrics): ShuffleReadMetrics =
-    new ShuffleReadMetrics(
-      s.remoteBlocksFetched,
-      s.localBlocksFetched,
-      s.fetchWaitTime,
-      s.remoteBytesRead,
-      s.localBytesRead,
-      s.recordsRead
-    )
-}
-
-case class ShuffleWriteMetrics(shuffleBytesWritten: Long,
-                               shuffleWriteTime: Long,
-                               shuffleRecordsWritten: Long)
-object ShuffleWriteMetrics {
-  def apply(s: SparkShuffleWriteMetrics): ShuffleWriteMetrics =
-    new ShuffleWriteMetrics(
-      s.shuffleBytesWritten,
-      s.shuffleWriteTime,
-      s.shuffleRecordsWritten
-    )
-}
-
-case class BlockStatus(storageLevel: StorageLevel,
-                       memSize: Long,
-                       diskSize: Long,
-                       tachyonSize: Long)
-object BlockStatus {
-  def apply(b: SparkBlockStatus): BlockStatus =
-    new BlockStatus(
-      StorageLevel(b.storageLevel),
-      b.memSize,
-      b.diskSize,
-      b.tachyonSize
-    )
-}
-
-
-case class TaskMetrics(hostname: String,
-                       executorDeserializeTime: Long,
-                       executorRunTime: Long,
-                       resultSize: Long,
-                       jvmGCTime: Long,
-                       resultSerializationTime: Long,
-                       memoryBytesSpilled: Long,
-                       diskBytesSpilled: Long,
-                       inputMetrics: Option[InputMetrics],
-                       outputMetrics: Option[OutputMetrics],
-                       shuffleReadMetrics: Option[ShuffleReadMetrics],
-                       shuffleWriteMetrics: Option[ShuffleWriteMetrics],
-                       updatedBlocks: Option[Seq[(BlockId, BlockStatus)]])
-
-object TaskMetrics {
-  def apply(t: SparkTaskMetrics): TaskMetrics =
-    new TaskMetrics(
-      t.hostname,
-      t.executorDeserializeTime,
-      t.executorRunTime,
-      t.resultSize,
-      t.jvmGCTime,
-      t.resultSerializationTime,
-      t.memoryBytesSpilled,
-      t.diskBytesSpilled,
-      t.inputMetrics.map(InputMetrics.apply),
-      t.outputMetrics.map(OutputMetrics.apply),
-      t.shuffleReadMetrics.map(ShuffleReadMetrics.apply),
-      t.shuffleWriteMetrics.map(ShuffleWriteMetrics.apply),
-      t.updatedBlocks.map(_.map(p => (p._1, BlockStatus(p._2))))
-    )
-}
-
-case class TaskStartEvent(stageId: Int, stageAttemptId: Int, taskInfo: TaskInfo)
-
-object TaskStartEvent {
-  def apply(s: SparkListenerTaskStart): TaskStartEvent =
-    new TaskStartEvent(
-      s.stageId,
-      s.stageAttemptId,
-      TaskInfo(s.taskInfo)
-    )
-}
-
-case class TaskEndReason(success: Option[Boolean] = None,
-                         resubmitted: Option[Boolean] = None,
-                         taskResultLost: Option[Boolean] = None,
-                         taskKilled: Option[Boolean] = None,
-                         unknownReason: Option[Boolean] = None,
-                         fetchFailed: Option[FetchFailed] = None,
-                         exceptionFailure: Option[ExceptionFailure] = None,
-                         taskCommitDenied: Option[TaskCommitDenied] = None,
-                         executorLostFailure: Option[ExecutorLostFailure] = None)
-
-object TaskEndReason {
-  def apply(r: SparkTaskEndReason): TaskEndReason = r match {
-    case Success => TaskEndReason(success = Some(true))
-    case Resubmitted => TaskEndReason(resubmitted = Some(true))
-    case TaskResultLost => TaskEndReason(taskResultLost = Some(true))
-    case TaskKilled => TaskEndReason(taskKilled = Some(true))
-    case UnknownReason => TaskEndReason(unknownReason = Some(true))
-    case e: FetchFailed => TaskEndReason(fetchFailed = Some(e))
-    case e: ExceptionFailure => TaskEndReason(exceptionFailure = Some(e))
-    case e: TaskCommitDenied => TaskEndReason(taskCommitDenied = Some(e))
-    case e: ExecutorLostFailure => TaskEndReason(executorLostFailure = Some(e))
-  }
-}
-
-case class TaskEndEvent(stageId: Int,
-                        stageAttemptId: Int,
-                        taskType: String,
-                        reason: TaskEndReason,
-                        taskInfo: TaskInfo,
-                        taskMetrics: TaskMetrics)
-
-object TaskEndEvent {
-  def apply(s: SparkListenerTaskEnd): TaskEndEvent =
-    new TaskEndEvent(
-      s.stageId,
-      s.stageAttemptId,
-      s.taskType,
-      TaskEndReason(s.reason),
-      TaskInfo(s.taskInfo),
-      TaskMetrics(s.taskMetrics)
-    )
-}
-
-object Props {
-  type Props = Map[String, String]
-  def apply(properties: Properties): Props =
-    properties
-    .stringPropertyNames()
-    .map(name => name -> properties.getProperty(name))
-    .toMap
-}
-
-import Props.Props
 
 object SparkIDL {
-  type RDDID = Int
-  type StageID = Int
-  type JobID = Int
-  type ExecutorID = String
-}
 
-case class JobStartEvent(jobId: Int,
-                         time: Long,
-                         stageInfos: Seq[StageInfo],
-                         properties: Option[Props] = None)
-object JobStartEvent {
-  def apply(e: SparkListenerJobStart): JobStartEvent =
-    new JobStartEvent(
-      e.jobId,
-      e.time,
-      e.stageInfos.map(StageInfo.apply),
-      Option(e.properties).map(Props.apply)
-    )
-}
+  def apply(im: SparkInputMetrics) = inputMetrics(im)
+  def inputMetrics(im: SparkInputMetrics): InputMetrics = {
+    InputMetrics.newBuilder
+      .readMethod(DataReadMethod.findById(im.readMethod.id))
+      .bytesRead(im.bytesRead)
+      .recordsRead(im.recordsRead)
+      .result()
+  }
 
+  def apply(om: SparkOutputMetrics) = outputMetrics(om)
+  def outputMetrics(om: SparkOutputMetrics): OutputMetrics = {
+    OutputMetrics.newBuilder
+      .writeMethod(DataWriteMethod.findById(om.writeMethod.id))
+      .bytesWritten(om.bytesWritten)
+      .recordsWritten(om.recordsWritten)
+      .result()
+  }
 
-case class JobEndEvent(jobId: Int,
-                       time: Long,
-                       success: Boolean)
-object JobEndEvent {
-  def apply(e: SparkListenerJobEnd): JobEndEvent =
-    JobEndEvent(
-      e.jobId,
-      e.time,
-      e.jobResult match {
-        case JobSucceeded => true
-        case _ => false
-      }
-    )
-}
+  def apply(sm: SparkShuffleReadMetrics) = shuffleReadMetrics(sm)
+  def shuffleReadMetrics(sm: SparkShuffleReadMetrics): ShuffleReadMetrics = {
+    ShuffleReadMetrics.newBuilder
+      .remoteBlocksFetched(sm.remoteBlocksFetched)
+      .localBlocksFetched(sm.localBlocksFetched)
+      .fetchWaitTime(sm.fetchWaitTime)
+      .remoteBytesRead(sm.remoteBytesRead)
+      .localBytesRead(sm.localBytesRead)
+      .recordsRead(sm.recordsRead)
+      .result()
+  }
 
-case class BlockManagerId(executorId: String, host: String, port: Int)
-object BlockManagerId {
-  def apply(b: SparkBlockManagerId): BlockManagerId =
-    BlockManagerId(
-      b.executorId,
-      b.host,
-      b.port
-    )
-}
+  def apply(sm: SparkShuffleWriteMetrics) = shuffleWriteMetrics(sm)
+  def shuffleWriteMetrics(sm: SparkShuffleWriteMetrics): ShuffleWriteMetrics = {
+    ShuffleWriteMetrics.newBuilder
+      .shuffleBytesWritten(sm.shuffleBytesWritten)
+      .shuffleWriteTime(sm.shuffleWriteTime)
+      .shuffleRecordsWritten(sm.shuffleRecordsWritten)
+      .result()
+  }
 
-case class BlockManagerAddedEvent(time: Long, blockManagerId: BlockManagerId, maxMem: Long)
-object BlockManagerAddedEvent {
-  def apply(e: SparkListenerBlockManagerAdded): BlockManagerAddedEvent =
-    BlockManagerAddedEvent(
-      e.time,
-      BlockManagerId(e.blockManagerId),
-      e.maxMem
-    )
-}
+  def updatedBlocks(ub: Seq[(BlockId, SparkBlockStatus)]): Seq[UpdatedBlock] = {
+    ub.map(updatedBlock)
+  }
 
-case class BlockManagerRemovedEvent(time: Long, blockManagerId: BlockManagerId)
-object BlockManagerRemovedEvent {
-  def apply(e: SparkListenerBlockManagerRemoved): BlockManagerRemovedEvent =
-    BlockManagerRemovedEvent(
-      e.time,
-      BlockManagerId(e.blockManagerId)
-    )
-}
+  def updatedBlock(ub: (BlockId, SparkBlockStatus)): UpdatedBlock = {
+    UpdatedBlock.newBuilder
+      .blockId(ub._1.name)
+      .blockStatus(blockStatus(ub._2))
+      .result()
+  }
 
-case class ExecutorInfo(executorHost: String,
-                        totalCores: Int,
-                        logUrlMap: Map[String, String])
-object ExecutorInfo {
-  def apply(e: SparkExecutorInfo): ExecutorInfo =
-    ExecutorInfo(
-      e.executorHost,
-      e.totalCores,
-      e.logUrlMap
-    )
-}
+  def apply(sl: SparkStorageLevel) = storageLevel(sl)
+  def storageLevel(sl: SparkStorageLevel): StorageLevel = {
+    StorageLevel.newBuilder
+      .useDisk(sl.useDisk)
+      .useMemory(sl.useMemory)
+      .useOffHeap(sl.useOffHeap)
+      .deserialized(sl.deserialized)
+      .replication(sl.replication)
+      .result()
+  }
 
-case class ExecutorAddedEvent(time: Long, executorId: String, executorInfo: ExecutorInfo)
-object ExecutorAddedEvent {
-  def apply(e: SparkListenerExecutorAdded): ExecutorAddedEvent =
-    ExecutorAddedEvent(
-      e.time,
-      e.executorId,
-      ExecutorInfo(e.executorInfo)
-    )
-}
+  def blockStatus(bs: SparkBlockStatus): BlockStatus = {
+    BlockStatus.newBuilder
+      .storageLevel(storageLevel(bs.storageLevel))
+      .memSize(bs.memSize)
+      .diskSize(bs.diskSize)
+      .tachyonSize(bs.tachyonSize)
+      .result()
+  }
 
-case class ExecutorMetricsUpdateEvent(execId: String,
-                                      taskMetrics: Seq[(Long, Int, Int, TaskMetrics)])
-object ExecutorMetricsUpdateEvent {
-  def apply(e: SparkListenerExecutorMetricsUpdate): ExecutorMetricsUpdateEvent =
-    ExecutorMetricsUpdateEvent(
-      e.execId,
-      e.taskMetrics.map(p => (p._1, p._2, p._3, TaskMetrics(p._4)))
-    )
+  def apply(tm: SparkTaskMetrics) = taskMetrics(tm)
+  def taskMetrics(tm: SparkTaskMetrics): TaskMetrics = {
+    TaskMetrics.newBuilder
+      .hostname(tm.hostname)
+      .executorDeserializeTime(tm.executorDeserializeTime)
+      .executorRunTime(tm.executorRunTime)
+      .resultSize(tm.resultSize)
+      .jvmGCTime(tm.jvmGCTime)
+      .resultSerializationTime(tm.resultSerializationTime)
+      .memoryBytesSpilled(tm.memoryBytesSpilled)
+      .diskBytesSpilled(tm.diskBytesSpilled)
+      .inputMetrics(tm.inputMetrics.map(inputMetrics))
+      .outputMetrics(tm.outputMetrics.map(outputMetrics))
+      .shuffleReadMetrics(tm.shuffleReadMetrics.map(shuffleReadMetrics))
+      .shuffleWriteMetrics(tm.shuffleWriteMetrics.map(shuffleWriteMetrics))
+      .updatedBlocks(tm.updatedBlocks.map(updatedBlocks))
+      .result()
+  }
+
+  def combineMetrics(a: InputMetrics, b: Option[InputMetrics], add: Boolean): InputMetrics = {
+    InputMetrics.newBuilder
+      .readMethod(a.readMethodOption)
+      .bytesRead(a.bytesRead + (if (add) 1 else -1)*b.map(_.bytesRead).getOrElse(0L))
+      .recordsRead(a.recordsRead + (if (add) 1 else -1)*b.map(_.recordsRead).getOrElse(0L))
+      .result()
+  }
+
+  def combineMetrics(a: OutputMetrics, b: Option[OutputMetrics], add: Boolean): OutputMetrics = {
+    OutputMetrics.newBuilder
+      .writeMethod(a.writeMethodOption)
+      .bytesWritten(a.bytesWritten + (if (add) 1 else -1)*b.map(_.bytesWritten).getOrElse(0L))
+      .recordsWritten(a.recordsWritten + (if (add) 1 else -1)*b.map(_.recordsWritten).getOrElse(0L))
+      .result()
+  }
+
+  def combineMetrics(a: ShuffleReadMetrics, b: Option[ShuffleReadMetrics], add: Boolean): ShuffleReadMetrics = {
+    ShuffleReadMetrics.newBuilder
+      .remoteBlocksFetched(a.remoteBlocksFetched + (if (add) 1 else -1)*b.map(_.remoteBlocksFetched).getOrElse(0))
+      .localBlocksFetched(a.localBlocksFetched + (if (add) 1 else -1)*b.map(_.localBlocksFetched).getOrElse(0))
+      .fetchWaitTime(a.fetchWaitTime + (if (add) 1 else -1)*b.map(_.fetchWaitTime).getOrElse(0L))
+      .remoteBytesRead(a.remoteBytesRead + (if (add) 1 else -1)*b.map(_.remoteBytesRead).getOrElse(0L))
+      .localBytesRead(a.localBytesRead + (if (add) 1 else -1)*b.map(_.localBytesRead).getOrElse(0L))
+      .recordsRead(a.recordsRead + (if (add) 1 else -1)*b.map(_.recordsRead).getOrElse(0L))
+      .result()
+  }
+
+  def combineMetrics(a: ShuffleWriteMetrics, b: Option[ShuffleWriteMetrics], add: Boolean): ShuffleWriteMetrics = {
+    ShuffleWriteMetrics.newBuilder
+      .shuffleBytesWritten(a.shuffleBytesWritten + (if (add) 1 else -1)*b.map(_.shuffleBytesWritten).getOrElse(0L))
+      .shuffleWriteTime(a.shuffleWriteTime + (if (add) 1 else -1)*b.map(_.shuffleWriteTime).getOrElse(0L))
+      .shuffleRecordsWritten(a.shuffleRecordsWritten + (if (add) 1 else -1)*b.map(_.shuffleRecordsWritten).getOrElse(0L))
+      .result()
+  }
+
+  def combineMetrics(a: TaskMetrics, b: Option[TaskMetrics], add: Boolean): TaskMetrics = {
+    TaskMetrics.newBuilder
+      .hostname(a.hostnameOption)
+      .executorDeserializeTime(a.executorDeserializeTime + (if (add) 1 else -1)*b.map(_.executorDeserializeTime).getOrElse(0L))
+      .executorRunTime(a.executorRunTime + (if (add) 1 else -1)*b.map(_.executorRunTime).getOrElse(0L))
+      .resultSize(a.resultSize + (if (add) 1 else -1)*b.map(_.resultSize).getOrElse(0L))
+      .jvmGCTime(a.jvmGCTime + (if (add) 1 else -1)*b.map(_.jvmGCTime).getOrElse(0L))
+      .resultSerializationTime(a.resultSerializationTime + (if (add) 1 else -1)*b.map(_.resultSerializationTime).getOrElse(0L))
+      .memoryBytesSpilled(a.memoryBytesSpilled + (if (add) 1 else -1)*b.map(_.memoryBytesSpilled).getOrElse(0L))
+      .diskBytesSpilled(a.diskBytesSpilled + (if (add) 1 else -1)*b.map(_.diskBytesSpilled).getOrElse(0L))
+      .inputMetrics(a.inputMetricsOption.map(combineMetrics(_, b.flatMap(_.inputMetricsOption), add = add)))
+      .outputMetrics(a.outputMetricsOption.map(combineMetrics(_, b.flatMap(_.outputMetricsOption), add = add)))
+      .shuffleReadMetrics(a.shuffleReadMetricsOption.map(combineMetrics(_, b.flatMap(_.shuffleReadMetricsOption), add = add)))
+      .shuffleWriteMetrics(a.shuffleWriteMetricsOption.map(combineMetrics(_, b.flatMap(_.shuffleWriteMetricsOption), add = add)))
+      .result()
+  }
+
+  def blockManagerId(id: SparkBlockManagerId): BlockManagerId = {
+    BlockManagerId.newBuilder
+      .executorID(id.executorId)
+      .host(id.host)
+      .port(id.port)
+      .result()
+  }
+
+  def fetchFailed(ff: SparkFetchFailed): FetchFailed = {
+    FetchFailed.newBuilder
+      .bmAddress(blockManagerId(ff.bmAddress))
+      .shuffleId(ff.shuffleId)
+      .mapId(ff.mapId)
+      .reduceId(ff.reduceId)
+      .message(ff.message)
+      .result()
+  }
+
+  def stackTraceElement(se: StackTraceElement): StackTraceElem = {
+    StackTraceElem.newBuilder
+      .declaringClass(se.getClassName)
+      .methodName(se.getMethodName)
+      .fileName(se.getFileName)
+      .lineNumber(se.getLineNumber)
+      .result()
+  }
+
+  def stackTrace(st: Seq[StackTraceElement]): Seq[StackTraceElem] = {
+    st.map(stackTraceElement)
+  }
+
+  def exceptionFailure(ef: SparkExceptionFailure): ExceptionFailure = {
+    ExceptionFailure.newBuilder
+      .className(ef.className)
+      .description(ef.description)
+      .stackTrace(stackTrace(ef.stackTrace))
+      .fullStackTrace(ef.fullStackTrace)
+      .metrics(ef.metrics.map(taskMetrics))
+      .result()
+  }
+
+  def taskCommitDenied(td: SparkTaskCommitDenied): TaskCommitDenied = {
+    TaskCommitDenied.newBuilder
+      .jobID(td.jobID)
+      .partitionID(td.partitionID)
+      .attemptID(td.attemptID)
+      .result()
+  }
+
+  def executorLostFailure(lf: SparkExecutorLostFailure): ExecutorLostFailure = {
+    ExecutorLostFailure.newBuilder
+      .execId(lf.execId)
+      .result()
+  }
+
+  def taskEndReason(r: SparkTaskEndReason): TaskEndReason = {
+    val builder = TaskEndReason.newBuilder
+
+    r match {
+      case SparkSuccess =>
+        builder.tpe(SUCCESS)
+      case SparkResubmitted =>
+        builder.tpe(RESUBMITTED)
+      case SparkTaskResultLost =>
+        builder.tpe(TASK_RESULT_LOST)
+      case SparkTaskKilled =>
+        builder.tpe(TASK_KILLED)
+      case SparkUnknownReason =>
+        builder.tpe(UNKNOWN_REASON)
+      case e: SparkFetchFailed =>
+        builder.tpe(FETCH_FAILED).fetchFailed(fetchFailed(e))
+      case e: SparkExceptionFailure =>
+        builder.tpe(EXCEPTION_FAILURE).exceptionFailure(exceptionFailure(e))
+      case e: SparkTaskCommitDenied =>
+        builder.tpe(TASK_COMMIT_DENIED).taskCommitDenied(taskCommitDenied(e))
+      case e: SparkExecutorLostFailure =>
+        builder.tpe(EXECUTOR_LOST_FAILURE).executorLostFailure(executorLostFailure(e))
+    }
+
+    builder.result()
+  }
+
+  def properties(props: Properties): Option[Map[String, String]] =
+    Option(props).map(p => p.keySet().map(_.toString).map(k => k -> p.getProperty(k)).toMap)
 }
 
