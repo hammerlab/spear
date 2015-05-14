@@ -28,11 +28,20 @@ trait StageEventsListener extends HasDatabaseService with DBHelpers {
       .and(_.jobId setTo jobIdOpt)
     )
 
+    jobIdOpt.foreach(jobId =>
+      db.findAndUpdateOne(
+        Q(Job)
+        .where(_.id eqs jobId)
+        .findAndModify(_.stageCounts.sub.field(_.started) inc 1)
+        .and(_.stageCounts.sub.field(_.running) inc 1)
+      )
+    )
     upsertRDDs(si)
   }
 
   override def onStageCompleted(stageCompleted: SparkListenerStageCompleted): Unit = {
     val si = stageCompleted.stageInfo
+
     db.findAndUpdateOne(
       Q(Stage)
       .where(_.id eqs si.stageId)
@@ -41,6 +50,17 @@ trait StageEventsListener extends HasDatabaseService with DBHelpers {
       // event, likely due to a race on the Spark side.
       .findAndModify(_.time setTo makeDuration(si.submissionTime, si.completionTime))
       .and(_.failureReason setTo si.failureReason)
+    )
+
+    // NOTE(ryan): could save a query by pulling this off of the Stage record fetched above...
+    val jobIdOpt = db.fetchOne(Q(StageJobJoin).where(_.stageId eqs si.stageId)).flatMap(_.jobIdOption)
+    jobIdOpt.foreach(jobId =>
+      db.findAndUpdateOne(
+        Q(Job)
+        .where(_.id eqs jobId)
+        .findAndModify(_.stageCounts.sub.field(s => if (si.failureReason.isEmpty) s.succeeded else s.failed) inc 1)
+        .and(_.stageCounts.sub.field(_.running) inc -1)
+      )
     )
   }
 

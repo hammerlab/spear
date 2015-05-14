@@ -18,6 +18,7 @@ trait JobEventsListener extends HasDatabaseService with DBHelpers {
               .stageIDs(jobStart.stageIds)
               .properties(SparkIDL.properties(jobStart.properties))
               .taskCounts(Counts.newBuilder.num(numTasks).result)
+              .stageCounts(Counts.newBuilder.num(jobStart.stageIds.length).result)
               .result()
     db.insert(job)
 
