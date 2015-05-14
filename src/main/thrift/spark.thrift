@@ -13,12 +13,12 @@ struct Duration {
   2: optional Time end
 }
 
-struct TaskCounts {
-  1: optional i32 numTasks
-  2: optional i32 tasksStarted
-  3: optional i32 tasksSucceeded
-  4: optional i32 tasksFailed
-  5: optional i32 tasksRunning
+struct Counts {
+  1: optional i32 num
+  2: optional i32 started
+  3: optional i32 succeeded
+  4: optional i32 failed
+  5: optional i32 running
 }
 
 struct Job {
@@ -27,7 +27,7 @@ struct Job {
   3: optional list<i32> stageIDs
   4: optional bool succeeded
   5: optional map<string, string> properties
-  6: optional TaskCounts counts
+  6: optional Counts taskCounts
 } (
   primary_key="id",
   mongo_collection="jobs",
@@ -40,7 +40,7 @@ struct Stage {
   3: optional string name
   4: optional list<i32> rddIDs
   5: optional string details
-  6: optional TaskCounts counts
+  6: optional Counts taskCounts
   7: optional Duration time
   8: optional string failureReason
   9: optional map<i64, AccumulableInfo> accumulables

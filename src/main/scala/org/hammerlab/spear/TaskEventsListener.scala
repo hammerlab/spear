@@ -28,8 +28,8 @@ trait TaskEventsListener extends HasDatabaseService with DBHelpers {
     val q = Q(Stage)
             .where(_.id eqs taskStart.stageId)
             .and(_.attempt eqs taskStart.stageAttemptId)
-            .findAndModify(_.counts.sub.field(_.tasksStarted) inc 1)
-            .and(_.counts.sub.field(_.tasksRunning) inc 1)
+            .findAndModify(_.taskCounts.sub.field(_.started) inc 1)
+            .and(_.taskCounts.sub.field(_.running) inc 1)
 
     db.findAndUpdateOne(q)
 
@@ -41,8 +41,8 @@ trait TaskEventsListener extends HasDatabaseService with DBHelpers {
       db.findAndUpdateOne(
         Q(Job)
           .where(_.id eqs jobId)
-          .findAndModify(_.counts.sub.field(_.tasksStarted) inc 1)
-          .and(_.counts.sub.field(_.tasksRunning) inc 1)
+          .findAndModify(_.taskCounts.sub.field(_.started) inc 1)
+          .and(_.taskCounts.sub.field(_.running) inc 1)
       )
     })
   }
@@ -76,8 +76,8 @@ trait TaskEventsListener extends HasDatabaseService with DBHelpers {
       Q(Stage)
       .where(_.id eqs taskEnd.stageId)
       .and(_.attempt eqs taskEnd.stageAttemptId)
-      .findAndModify(_.counts.sub.field(s => if (success) s.tasksSucceeded else s.tasksFailed) inc 1)
-      .and(_.counts.sub.field(_.tasksRunning) inc -1)
+      .findAndModify(_.taskCounts.sub.field(s => if (success) s.succeeded else s.failed) inc 1)
+      .and(_.taskCounts.sub.field(_.running) inc -1)
     )
 
     db.fetchOne(
@@ -88,8 +88,8 @@ trait TaskEventsListener extends HasDatabaseService with DBHelpers {
       db.findAndUpdateOne(
         Q(Job)
           .where(_.id eqs jobId)
-          .findAndModify(_.counts.sub.field(s => if (success) s.tasksSucceeded else s.tasksFailed) inc 1)
-          .and(_.counts.sub.field(_.tasksRunning) inc -1)
+          .findAndModify(_.taskCounts.sub.field(s => if (success) s.succeeded else s.failed) inc 1)
+          .and(_.taskCounts.sub.field(_.running) inc -1)
       )
     })
 

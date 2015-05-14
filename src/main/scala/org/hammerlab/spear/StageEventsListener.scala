@@ -19,7 +19,7 @@ trait StageEventsListener extends HasDatabaseService with DBHelpers {
       .where(_.id eqs si.stageId)
       .and(_.attempt eqs si.attemptId)
       .findAndModify(_.name setTo si.name)
-      .and(_.counts.sub.field(_.numTasks) setTo si.numTasks)
+      .and(_.taskCounts.sub.field(_.num) setTo si.numTasks)
       .and(_.rddIDs setTo si.rddInfos.map(_.id))
       .and(_.details setTo si.details)
       .and(_.time setTo makeDuration(si.submissionTime))
