@@ -12,7 +12,7 @@ trait JobEventsListener extends HasDatabaseService with DBHelpers {
 
     val job = Job.newBuilder
               .id(jobStart.jobId)
-              .startTime(jobStart.time)
+              .time(makeDuration(jobStart.time))
               .stageIDs(jobStart.stageIds)
               .properties(SparkIDL.properties(jobStart.properties))
               .result()
@@ -27,8 +27,7 @@ trait JobEventsListener extends HasDatabaseService with DBHelpers {
         .and(_.numTasks setTo si.numTasks)
         .and(_.rddIDs setTo si.rddInfos.map(_.id))
         .and(_.details setTo si.details)
-        .and(_.startTime setTo si.submissionTime)
-        .and(_.endTime setTo si.completionTime)
+        .and(_.time setTo makeDuration(si.submissionTime, si.completionTime))
         .and(_.failureReason setTo si.failureReason)
         .and(_.jobId setTo jobStart.jobId)
       )
@@ -48,7 +47,7 @@ trait JobEventsListener extends HasDatabaseService with DBHelpers {
     db.findAndUpdateOne(
       Q(Job)
       .where(_.id eqs jobEnd.jobId)
-      .findAndModify(_.endTime setTo jobEnd.time)
+      .findAndModify(_.time.sub.field(_.end) setTo jobEnd.time)
       .and(_.succeeded setTo (jobEnd.jobResult == JobSucceeded))
     )
   }

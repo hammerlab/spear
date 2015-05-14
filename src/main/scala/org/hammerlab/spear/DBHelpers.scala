@@ -4,7 +4,7 @@ import com.foursquare.rogue.spindle.{SpindleQuery => Q}
 import com.foursquare.rogue.spindle.SpindleRogue._
 import org.apache.spark.scheduler.StageInfo
 import org.apache.spark.storage.RDDInfo
-import org.hammerlab.spear.SparkTypedefs.{TaskID, ExecutorID, StageAttemptID, StageID}
+import org.hammerlab.spear.SparkTypedefs.{TaskID, ExecutorID, StageAttemptID, StageID, Time}
 import org.apache.spark.executor.{
   TaskMetrics => SparkTaskMetrics
 }
@@ -121,4 +121,18 @@ trait DBHelpers extends HasDatabaseService {
     rddInfos.foreach(upsertRDD)
   }
 
+  def makeDuration(start: Time): Duration = {
+    Duration.newBuilder.start(start).result
+  }
+
+  def makeDuration(start: Time, end: Time): Duration = {
+    Duration.newBuilder.start(start).end(end).result
+  }
+
+  def makeDuration(startOpt: Option[Time], endOpt: Option[Time] = None): Option[Duration] = {
+    (startOpt, endOpt) match {
+      case (None, None) => None
+      case _ => Some(Duration.newBuilder.start(startOpt).end(endOpt).result)
+    }
+  }
 }

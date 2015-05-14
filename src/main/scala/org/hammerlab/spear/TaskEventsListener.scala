@@ -18,7 +18,7 @@ trait TaskEventsListener extends HasDatabaseService with DBHelpers {
       .attempt(ti.attempt)
       .stageId(taskStart.stageId)
       .stageAttemptId(taskStart.stageAttemptId)
-      .startTime(ti.launchTime)
+      .time(makeDuration(ti.launchTime))
       .execId(ti.executorId)
       .taskLocality(TaskLocality.findById(ti.taskLocality.id))
       .speculative(ti.speculative)
@@ -55,6 +55,7 @@ trait TaskEventsListener extends HasDatabaseService with DBHelpers {
       .findAndModify(_.taskType setTo taskEnd.taskType)
       .and(_.taskEndReason setTo reason)
       .and(_.metrics push tm)
+      .and(_.time setTo makeDuration(ti.launchTime, ti.finishTime))
     )
 
     db.findAndUpdateOne(

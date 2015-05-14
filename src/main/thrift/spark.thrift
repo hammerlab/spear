@@ -6,14 +6,19 @@ typedef i32 StageAttemptID
 typedef i64 TaskID
 typedef string ExecutorID
 typedef i32 RDDID
+typedef i64 Time
+
+struct Duration {
+  1: optional Time start
+  2: optional Time end
+}
 
 struct Job {
   1: optional JobID id
-  2: optional i64 startTime
+  2: optional Duration time
   3: optional list<i32> stageIDs
-  4: optional i64 endTime
-  5: optional bool succeeded
-  6: optional map<string, string> properties
+  4: optional bool succeeded
+  5: optional map<string, string> properties
 } (
   primary_key="id",
   mongo_collection="jobs",
@@ -30,13 +35,12 @@ struct Stage {
   7: optional i32 tasksStarted
   8: optional i32 tasksSucceeded
   9: optional i32 tasksFailed
-  10: optional i64 startTime
-  11: optional i64 endTime
-  12: optional string failureReason
-  13: optional map<i64, AccumulableInfo> accumulables
-  14: optional TaskMetrics metrics
-  15: optional map<string, string> properties
-  16: optional JobID jobId
+  10: optional Duration time
+  11: optional string failureReason
+  12: optional map<i64, AccumulableInfo> accumulables
+  13: optional TaskMetrics metrics
+  14: optional map<string, string> properties
+  15: optional JobID jobId
 } (
   primary_key="id",
   mongo_collection="stages",
@@ -202,7 +206,7 @@ struct Task {
   3: optional i32 attempt
   4: optional StageID stageId
   5: optional i32 stageAttemptId
-  6: optional i64 startTime
+  6: optional Duration time
   7: optional ExecutorID execId
   8: optional TaskLocality taskLocality
   9: optional bool speculative
