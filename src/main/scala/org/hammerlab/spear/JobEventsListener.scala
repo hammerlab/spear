@@ -18,21 +18,22 @@ trait JobEventsListener extends HasDatabaseService {
               .result()
     db.insert(job)
 
-    val stages = jobStart.stageInfos.map(si => {
-      Stage.newBuilder
-      .id(si.stageId)
-      .attempt(si.attemptId)
-      .name(si.name)
-      .numTasks(si.numTasks)
-      .rddIDs(si.rddInfos.map(_.id))
-      .details(si.details)
-      .startTime(si.submissionTime)
-      .result()
-    })
+    jobStart.stageInfos.foreach(si => {
+      db.findAndUpsertOne(
+        Q(Stage)
+        .where(_.id eqs si.stageId)
+        .and(_.attempt eqs si.attemptId)
+        .findAndModify(_.name setTo si.name)
+        .and(_.numTasks setTo si.numTasks)
+        .and(_.rddIDs setTo si.rddInfos.map(_.id))
+        .and(_.details setTo si.details)
+        .and(_.startTime setTo si.submissionTime)
+        .and(_.endTime setTo si.completionTime)
+        .and(_.failureReason setTo si.failureReason)
+      )
 
-    // NOTE(ryan): assumes that this happens before the StageSubmitted event,
-    // otherwise we'd get duplicate Stage records.
-    db.insertAll(stages)
+
+    })
 
     val rdds = jobStart.stageInfos.flatMap(_.rddInfos).map(ri => {
       RDD.newBuilder
@@ -54,6 +55,4 @@ trait JobEventsListener extends HasDatabaseService {
       .and(_.succeeded setTo (jobEnd.jobResult == JobSucceeded))
     )
   }
-
-
 }
