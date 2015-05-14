@@ -30,8 +30,14 @@ trait JobEventsListener extends HasDatabaseService {
         .and(_.startTime setTo si.submissionTime)
         .and(_.endTime setTo si.completionTime)
         .and(_.failureReason setTo si.failureReason)
+        .and(_.jobId setTo jobStart.jobId)
       )
 
+      db.findAndUpsertOne(
+        Q(StageJobJoin)
+          .where(_.stageId eqs si.stageId)
+          .findAndModify(_.jobId setTo jobStart.jobId)
+      )
 
     })
 

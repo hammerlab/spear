@@ -9,7 +9,11 @@ trait StageEventsListener extends HasDatabaseService {
 
   // Stage events
   override def onStageSubmitted(stageSubmitted: SparkListenerStageSubmitted): Unit = {
+
     val si = stageSubmitted.stageInfo
+
+    val jobIdOpt = db.fetchOne(Q(StageJobJoin).where(_.stageId eqs si.stageId)).flatMap(_.jobIdOption)
+
     db.findAndUpsertOne(
       Q(Stage)
       .where(_.id eqs si.stageId)
@@ -22,6 +26,7 @@ trait StageEventsListener extends HasDatabaseService {
       .and(_.endTime setTo si.completionTime)
       .and(_.failureReason setTo si.failureReason)
       .and(_.properties setTo SparkIDL.properties(stageSubmitted.properties))
+      .and(_.jobId setTo jobIdOpt)
     )
 
     // TODO(ryan): verify whether this will lead to duplicate RDD records, e.g.

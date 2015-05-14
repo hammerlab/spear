@@ -36,11 +36,23 @@ struct Stage {
   13: optional map<i64, AccumulableInfo> accumulables
   14: optional TaskMetrics metrics
   15: optional map<string, string> properties
+  16: optional JobID jobId
 } (
   primary_key="id",
   mongo_collection="stages",
   mongo_identifier="spark",
-  index="id: asc, attempt: asc"
+  index="id: asc, attempt: asc",
+  foreign_key="jobId" // TODO(ryan): what does this get us?
+)
+
+struct StageJobJoin {
+  1: optional StageID stageId
+  2: optional JobID jobId
+} (
+  primary_key="stageId",
+  mongo_collection="stage_job_join",
+  mongo_identifier="spark",
+  foreign_key="jobId"
 )
 
 struct AccumulableInfo {
