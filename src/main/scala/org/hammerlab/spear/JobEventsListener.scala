@@ -12,7 +12,7 @@ trait JobEventsListener extends HasDatabaseService with DBHelpers {
 
     val numTasks = jobStart.stageInfos.map(_.numTasks).sum
 
-    val taskCounts = Counts.newBuilder.num(numTasks).result
+    val taskCounts = Counts.newBuilder.num(numTasks).started(0).failed(0).running(0).succeeded(0).result
     val stageCounts = Counts.newBuilder.num(jobStart.stageIds.length).started(0).failed(0).running(0).succeeded(0).result
 
     db.findAndUpsertOne(
@@ -26,12 +26,13 @@ trait JobEventsListener extends HasDatabaseService with DBHelpers {
     )
 
     jobStart.stageInfos.foreach(si => {
+      val taskCounts = Counts.newBuilder.num(si.numTasks).started(0).failed(0).running(0).succeeded(0).result
       db.findAndUpsertOne(
         Q(Stage)
         .where(_.id eqs si.stageId)
         .and(_.attempt eqs si.attemptId)
         .findAndModify(_.name setTo si.name)
-        .and(_.taskCounts.sub.field(_.num) setTo si.numTasks)
+        .and(_.taskCounts setTo taskCounts)
         .and(_.rddIDs setTo si.rddInfos.map(_.id))
         .and(_.details setTo si.details)
         .and(_.time setTo makeDuration(si.submissionTime, si.completionTime))
