@@ -11,18 +11,17 @@ trait TaskEventsListener extends HasDatabaseService with DBHelpers {
   // Task events
   override def onTaskStart(taskStart: SparkListenerTaskStart): Unit = {
     val ti = taskStart.taskInfo
-    db.insert(
-      Task.newBuilder
-      .id(ti.taskId)
-      .index(ti.index)
-      .attempt(ti.attempt)
-      .stageId(taskStart.stageId)
-      .stageAttemptId(taskStart.stageAttemptId)
-      .time(makeDuration(ti.launchTime))
-      .execId(ti.executorId)
-      .taskLocality(TaskLocality.findById(ti.taskLocality.id))
-      .speculative(ti.speculative)
-      .result()
+    db.findAndUpsertOne(
+      Q(Task)
+        .where(_.id eqs ti.taskId)
+        .findAndModify(_.index setTo ti.index)
+        .and(_.attempt setTo ti.attempt)
+        .and(_.stageId setTo taskStart.stageId)
+        .and(_.stageAttemptId setTo taskStart.stageAttemptId)
+        .and(_.time setTo makeDuration(ti.launchTime))
+        .and(_.execId setTo ti.executorId)
+        .and(_.taskLocality setTo TaskLocality.findById(ti.taskLocality.id))
+        .and(_.speculative setTo ti.speculative)
     )
 
     val q = Q(Stage)

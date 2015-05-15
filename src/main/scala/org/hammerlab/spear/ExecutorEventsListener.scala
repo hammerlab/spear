@@ -53,15 +53,14 @@ trait ExecutorEventsListener
       )
     }
 
-    db.insert(
-      Executor.newBuilder
-      .id(executorAdded.executorId)
-      .host(host)
-      .port(portOpt)
-      .addedAt(executorAdded.time)
-      .totalCores(executorAdded.executorInfo.totalCores)
-      .logUrlMap(executorAdded.executorInfo.logUrlMap)
-      .result()
+    db.findAndUpsertOne(
+      Q(Executor)
+        .where(_.id eqs executorAdded.executorId)
+        .findAndModify(_.host setTo host)
+        .and(_.port setTo portOpt)
+        .and(_.addedAt setTo executorAdded.time)
+        .and(_.totalCores setTo executorAdded.executorInfo.totalCores)
+        .and(_.logUrlMap setTo executorAdded.executorInfo.logUrlMap)
     )
   }
 

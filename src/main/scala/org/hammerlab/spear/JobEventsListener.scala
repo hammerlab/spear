@@ -12,17 +12,18 @@ trait JobEventsListener extends HasDatabaseService with DBHelpers {
 
     val numTasks = jobStart.stageInfos.map(_.numTasks).sum
 
-    val job = Job.newBuilder
-              .id(jobStart.jobId)
-              .time(makeDuration(jobStart.time))
-              .stageIDs(jobStart.stageIds)
-              .properties(SparkIDL.properties(jobStart.properties))
-              .taskCounts(Counts.newBuilder.num(numTasks).result)
-              .stageCounts(Counts.newBuilder.num(jobStart.stageIds.length).result)
-              .result()
-    db.insert(job)
+    val taskCounts = Counts.newBuilder.num(numTasks).result
+    val stageCounts = Counts.newBuilder.num(jobStart.stageIds.length).started(0).failed(0).running(0).succeeded(0).result
 
-
+    db.findAndUpsertOne(
+      Q(Job)
+        .where(_.id eqs jobStart.jobId)
+        .findAndModify(_.time setTo makeDuration(jobStart.time))
+        .and(_.stageIDs setTo jobStart.stageIds)
+        .and(_.properties setTo SparkIDL.properties(jobStart.properties))
+        .and(_.taskCounts setTo taskCounts)
+        .and(_.stageCounts setTo stageCounts)
+    )
 
     jobStart.stageInfos.foreach(si => {
       db.findAndUpsertOne(
@@ -43,7 +44,6 @@ trait JobEventsListener extends HasDatabaseService with DBHelpers {
           .where(_.stageId eqs si.stageId)
           .findAndModify(_.jobId setTo jobStart.jobId)
       )
-
     })
 
     upsertRDDs(jobStart.stageInfos.flatMap(_.rddInfos))
