@@ -138,64 +138,83 @@ object SparkIDL {
       .result()
   }
 
-  def combineMetrics(a: ShuffleReadMetrics, b: Option[ShuffleReadMetrics], add: Boolean): ShuffleReadMetrics = {
-    ShuffleReadMetrics.newBuilder
-      .remoteBlocksFetched(a.remoteBlocksFetched + (if (add) 1 else -1)*b.map(_.remoteBlocksFetched).getOrElse(0))
-      .localBlocksFetched(a.localBlocksFetched + (if (add) 1 else -1)*b.map(_.localBlocksFetched).getOrElse(0))
-      .fetchWaitTime(a.fetchWaitTime + (if (add) 1 else -1)*b.map(_.fetchWaitTime).getOrElse(0L))
-      .remoteBytesRead(a.remoteBytesRead + (if (add) 1 else -1)*b.map(_.remoteBytesRead).getOrElse(0L))
-      .localBytesRead(a.localBytesRead + (if (add) 1 else -1)*b.map(_.localBytesRead).getOrElse(0L))
-      .recordsRead(a.recordsRead + (if (add) 1 else -1)*b.map(_.recordsRead).getOrElse(0L))
-      .result()
+  def combineMetrics(a: ShuffleReadMetrics, bOpt: Option[ShuffleReadMetrics], add: Boolean): ShuffleReadMetrics = {
+    bOpt match {
+      case Some(b) =>
+        val m = (if (add) 1 else -1)
+        ShuffleReadMetrics.newBuilder
+          .remoteBlocksFetched(a.remoteBlocksFetched + m*b.remoteBlocksFetched)
+          .localBlocksFetched(a.localBlocksFetched + m*b.localBlocksFetched)
+          .fetchWaitTime(a.fetchWaitTime + m*b.fetchWaitTime)
+          .remoteBytesRead(a.remoteBytesRead + m*b.remoteBytesRead)
+          .localBytesRead(a.localBytesRead + m*b.localBytesRead)
+          .recordsRead(a.recordsRead + m*b.recordsRead)
+          .result()
+      case None =>
+        a
+    }
   }
 
-  def combineMetrics(a: ShuffleWriteMetrics, b: Option[ShuffleWriteMetrics], add: Boolean): ShuffleWriteMetrics = {
-    ShuffleWriteMetrics.newBuilder
-      .shuffleBytesWritten(a.shuffleBytesWritten + (if (add) 1 else -1)*b.map(_.shuffleBytesWritten).getOrElse(0L))
-      .shuffleWriteTime(a.shuffleWriteTime + (if (add) 1 else -1)*b.map(_.shuffleWriteTime).getOrElse(0L))
-      .shuffleRecordsWritten(a.shuffleRecordsWritten + (if (add) 1 else -1)*b.map(_.shuffleRecordsWritten).getOrElse(0L))
-      .result()
+  def combineMetrics(a: ShuffleWriteMetrics, bOpt: Option[ShuffleWriteMetrics], add: Boolean): ShuffleWriteMetrics = {
+    bOpt match {
+      case Some(b) =>
+        val m = (if (add) 1 else -1)
+        ShuffleWriteMetrics.newBuilder
+          .shuffleBytesWritten(a.shuffleBytesWritten + m*b.shuffleBytesWritten)
+          .shuffleWriteTime(a.shuffleWriteTime + m*b.shuffleWriteTime)
+          .shuffleRecordsWritten(a.shuffleRecordsWritten + m*b.shuffleRecordsWritten)
+          .result()
+      case None =>
+        a
+    }
   }
 
-  def combineMetrics(a: TaskMetrics, b: Option[TaskMetrics], add: Boolean): TaskMetrics = {
-    TaskMetrics.newBuilder
-      .hostname(a.hostnameOption)
-      .executorDeserializeTime(a.executorDeserializeTime + (if (add) 1 else -1)*b.map(_.executorDeserializeTime).getOrElse(0L))
-      .executorRunTime(a.executorRunTime + (if (add) 1 else -1)*b.map(_.executorRunTime).getOrElse(0L))
-      .resultSize(a.resultSize + (if (add) 1 else -1)*b.map(_.resultSize).getOrElse(0L))
-      .jvmGCTime(a.jvmGCTime + (if (add) 1 else -1)*b.map(_.jvmGCTime).getOrElse(0L))
-      .resultSerializationTime(a.resultSerializationTime + (if (add) 1 else -1)*b.map(_.resultSerializationTime).getOrElse(0L))
-      .memoryBytesSpilled(a.memoryBytesSpilled + (if (add) 1 else -1)*b.map(_.memoryBytesSpilled).getOrElse(0L))
-      .diskBytesSpilled(a.diskBytesSpilled + (if (add) 1 else -1)*b.map(_.diskBytesSpilled).getOrElse(0L))
-      .inputMetrics(
-        combineMetrics(
-          a.inputMetricsOption.getOrElse(InputMetrics.newBuilder.result),
-          b.flatMap(_.inputMetricsOption),
-          add = add
-        )
-      )
-      .outputMetrics(
-        combineMetrics(
-          a.outputMetricsOption.getOrElse(OutputMetrics.newBuilder.result),
-          b.flatMap(_.outputMetricsOption),
-          add = add
-        )
-      )
-      .shuffleReadMetrics(
-        combineMetrics(
-          a.shuffleReadMetricsOption.getOrElse(ShuffleReadMetrics.newBuilder.result),
-          b.flatMap(_.shuffleReadMetricsOption),
-          add = add
-        )
-      )
-      .shuffleWriteMetrics(
-        combineMetrics(
-          a.shuffleWriteMetricsOption.getOrElse(ShuffleWriteMetrics.newBuilder.result),
-          b.flatMap(_.shuffleWriteMetricsOption),
-          add = add
-        )
-      )
-      .result()
+  def combineMetrics(a: TaskMetrics, bOpt: Option[TaskMetrics], add: Boolean): TaskMetrics = {
+    bOpt match {
+      case Some(b) =>
+        val m = if (add) 1 else -1
+        TaskMetrics.newBuilder
+        .hostname(a.hostnameOption)
+        .executorDeserializeTime(a.executorDeserializeTime + m*b.executorDeserializeTime)
+        .executorRunTime(a.executorRunTime + m*b.executorRunTime)
+        .resultSize(a.resultSize + m*b.resultSize)
+        .jvmGCTime(a.jvmGCTime + m*b.jvmGCTime)
+        .resultSerializationTime(a.resultSerializationTime + m*b.resultSerializationTime)
+        .memoryBytesSpilled(a.memoryBytesSpilled + m*b.memoryBytesSpilled)
+        .diskBytesSpilled(a.diskBytesSpilled + m*b.diskBytesSpilled)
+        .inputMetrics(
+            combineMetrics(
+              a.inputMetricsOption.getOrElse(InputMetrics.newBuilder.result),
+              b.inputMetricsOption,
+              add = add
+            )
+          )
+        .outputMetrics(
+            combineMetrics(
+              a.outputMetricsOption.getOrElse(OutputMetrics.newBuilder.result),
+              b.outputMetricsOption,
+              add = add
+            )
+          )
+        .shuffleReadMetrics(
+            combineMetrics(
+              a.shuffleReadMetricsOption.getOrElse(ShuffleReadMetrics.newBuilder.result),
+              b.shuffleReadMetricsOption,
+              add = add
+            )
+          )
+        .shuffleWriteMetrics(
+            combineMetrics(
+              a.shuffleWriteMetricsOption.getOrElse(ShuffleWriteMetrics.newBuilder.result),
+              b.shuffleWriteMetricsOption,
+              add = add
+            )
+          )
+        .result()
+
+      case None =>
+        a
+    }
   }
 
   def blockManagerId(id: SparkBlockManagerId): BlockManagerId = {
