@@ -31,7 +31,6 @@ trait ExecutorEventsListener
       // Update Executor metrics
       updateExecutorMetrics(
         executorMetricsUpdate.execId,
-        executorMetricsUpdate.taskMetrics,
         metricsDeltas
       )
 

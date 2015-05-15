@@ -88,14 +88,14 @@ trait DBHelpers extends HasDatabaseService {
   }
 
   def updateExecutorMetrics(execID: ExecutorID,
-                            metrics: Seq[(TaskID, StageID, StageAttemptID, SparkTaskMetrics)],
                             metricsDeltas: Map[TaskID, TaskMetrics]) = {
 
     val existingExecutorMetrics = getExecutorMetrics(execID)
 
-    val newExecutorMetrics = metricsDeltas.values.toList.foldLeft(existingExecutorMetrics)((e,m) => {
-      SparkIDL.combineMetrics(e, Some(m), add = true)
-    })
+    val newExecutorMetrics =
+      metricsDeltas.values.toList.foldLeft(existingExecutorMetrics)((e,m) => {
+        SparkIDL.combineMetrics(e, Some(m), add = true)
+      })
 
     db.findAndUpdateOne(
       Q(Executor)
