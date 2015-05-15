@@ -31,12 +31,17 @@ trait DBHelpers extends HasDatabaseService {
   def getTaskMetricsDeltasMap(metrics: Seq[(TaskID, _, _, SparkTaskMetrics)]): Map[TaskID, TaskMetrics] = {
     val taskIds = metrics.map(_._1)
 
+    val fromDB = db.fetch(
+      Q(Task).where(_.id in taskIds).select(_.id, _.metrics.slice(-1))
+    )
     val existingTaskMetrics: Map[TaskID, TaskMetrics] =
-      db.fetch(
-        Q(Task).where(_.id in taskIds).select(_.id, _.metrics.slice(-1))
-      ).flatMap {
-        case (Some(id), Some(metrics :: Nil)) => Some(id, metrics)
-        case _ => None
+      fromDB.flatMap {
+        case (Some(id), Some(Seq(metrics))) => Some(id, metrics)
+        case (Some(_), None) | (Some(_), Some(Seq())) => Map.empty
+        case x =>
+          throw new Exception(
+            s"Unknown result fetching existing metrics for tasks ${taskIds.mkString(",")}: $x"
+          )
       }.toMap
 
     (for {
