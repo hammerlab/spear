@@ -63,6 +63,10 @@ trait TaskEventsListener extends HasDatabaseService with DBHelpers {
     val ti = taskEnd.taskInfo
     val tid = ti.taskId
 
+    // NOTE(ryan): important to compute these *before* updating Task records below.
+    val metricsUpdates = Seq((tid, taskEnd.stageId, taskEnd.stageAttemptId, taskEnd.taskMetrics))
+    val metricsDeltas = getTaskMetricsDeltasMap(metricsUpdates)
+
     db.findAndUpdateOne(
       Q(Task)
       .where(_.id eqs tid)
@@ -93,8 +97,6 @@ trait TaskEventsListener extends HasDatabaseService with DBHelpers {
       )
     })
 
-    val metricsUpdates = Seq((tid, taskEnd.stageId, taskEnd.stageAttemptId, taskEnd.taskMetrics))
-    val metricsDeltas = getTaskMetricsDeltasMap(metricsUpdates)
     updateStageMetrics(metricsUpdates, metricsDeltas)
     updateExecutorMetrics(ti.executorId, metricsDeltas)
   }

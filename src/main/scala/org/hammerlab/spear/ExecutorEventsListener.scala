@@ -16,6 +16,9 @@ trait ExecutorEventsListener
 
     if (executorMetricsUpdate.taskMetrics.size > 0) {
 
+      // NOTE(ryan): important to do this *before* updating Task records below :-\
+      val metricsDeltas: Map[TaskID, TaskMetrics] = getTaskMetricsDeltasMap(executorMetricsUpdate.taskMetrics)
+
       // Update Task records
       executorMetricsUpdate.taskMetrics.map {
         case (taskId, stageId, stageAttempt, taskMetrics) =>
@@ -25,8 +28,6 @@ trait ExecutorEventsListener
             .findAndModify(_.metrics push SparkIDL.taskMetrics(taskMetrics))
           )
       }
-
-      val metricsDeltas: Map[TaskID, TaskMetrics] = getTaskMetricsDeltasMap(executorMetricsUpdate.taskMetrics)
 
       // Update Executor metrics
       updateExecutorMetrics(
