@@ -5,12 +5,10 @@ import com.foursquare.rogue.spindle.{SpindleDBCollectionFactory, SpindleDatabase
 import com.foursquare.spindle.UntypedMetaRecord
 import com.mongodb.casbah.Imports._
 
-import org.apache.spark.{SparkEnv, SparkContext}
+import org.apache.spark.SparkConf
 import org.apache.spark.scheduler.SparkListener
 
-class Spear(sc: SparkContext,
-            mongoHost: String = "localhost",
-            mongoPort: Int = 27017)
+class Spear(val conf: SparkConf)
   extends SparkListener
   with JobEventsListener
   with StageEventsListener
@@ -20,28 +18,23 @@ class Spear(sc: SparkContext,
   with MiscEventsListener
 {
 
-  val applicationId = sc.applicationId
+  val applicationId = conf.get("spark.app.id")
+  val mongoHost = conf.getOption("spear.host").getOrElse("localhost")
+  val mongoPort = conf.getOption("spear.port").map(_.toInt).getOrElse(27017)
+  val mongoDatabase = conf.getOption("spear.db").getOrElse(applicationId)
 
   val appId = applicationId
 
+  println(s"Using database $mongoHost:$mongoPort/$mongoDatabase for application $applicationId")
   object db extends SpindleDatabaseService(ConcreteDBCollectionFactory)
 
-  println(s"Creating database for appplication: $applicationId")
   object ConcreteDBCollectionFactory extends SpindleDBCollectionFactory {
     import com.mongodb.{DB, MongoClient}
-    lazy val db: DB = new MongoClient(mongoHost, mongoPort).getDB(applicationId)
+    lazy val db: DB = new MongoClient(mongoHost, mongoPort).getDB(mongoDatabase)
     override def getPrimaryDB(meta: UntypedMetaRecord) = db
     override def indexCache = None
   }
 
-  // Add executors
-  db.insertAll(
-    SparkEnv.get.blockManager.master.getMemoryStatus.keySet.toList.map(b =>
-      Executor.newBuilder.id(b.executorId).host(b.host).port(b.port).result()
-    )
-  )
-
-  sc.addSparkListener(this)
 
   def ensureIndexes(): Unit = {
 
