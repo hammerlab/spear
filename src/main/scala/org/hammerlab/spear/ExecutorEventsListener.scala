@@ -13,31 +13,39 @@ trait ExecutorEventsListener
 
   // Executor events
   override def onExecutorMetricsUpdate(executorMetricsUpdate: SparkListenerExecutorMetricsUpdate): Unit = {
+    val metrics = executorMetricsUpdate.taskMetrics
+    if (metrics.size > 0) {
 
-    if (executorMetricsUpdate.taskMetrics.size > 0) {
+      val eid = executorMetricsUpdate.execId
 
       // NOTE(ryan): important to do this *before* updating Task records below :-\
-      val metricsDeltas: Map[TaskID, TaskMetrics] = getTaskMetricsDeltasMap(executorMetricsUpdate.taskMetrics)
+      val metricsDeltas: Map[TaskID, TaskMetrics] = getTaskMetricsDeltasMap(metrics)
 
       // Update Task records
-      executorMetricsUpdate.taskMetrics.map {
-        case (taskId, stageId, stageAttempt, taskMetrics) =>
-          db.findAndUpdateOne(
-            getTask(taskId).findAndModify(_.metrics push SparkIDL.taskMetrics(taskMetrics))
-          )
-      }
+      val tasksAlreadyExisted =
+        metrics.flatMap {
+          case (taskId, stageId, stageAttempt, taskMetrics) =>
+            db.findAndUpsertOne(
+              getTask(taskId)
+              .findAndModify(_.metrics push SparkIDL.taskMetrics(taskMetrics))
+              .and(_.stageId setTo stageId)
+              .and(_.stageAttemptId setTo stageAttempt)
+            ) match {
+              case None =>
+                System.err.println(
+                  s"Got executor $eid metrics update about previously-unheard-of task: $taskId in stage $stageId.$stageAttempt."
+                )
+                None
+              case _ =>
+                Some(taskId)
+            }
+        }.toSet
 
       // Update Executor metrics
-      updateExecutorMetrics(
-        executorMetricsUpdate.execId,
-        metricsDeltas
-      )
+      updateExecutorMetrics(eid, metricsDeltas, tasksAlreadyExisted)
 
       // Update Stage metrics
-      updateStageMetrics(
-        executorMetricsUpdate.taskMetrics,
-        metricsDeltas
-      )
+      updateStageMetrics(metrics, metricsDeltas, tasksAlreadyExisted)
     }
   }
 

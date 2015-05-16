@@ -68,16 +68,30 @@ trait DBHelpers extends HasDatabaseService {
       .where(_.appId eqs appId)
       .and(_.id eqs id)
 
-  def getStageMetrics(id: StageID, attempt: StageAttemptID): TaskMetrics = {
-    db.fetchOne(
-      getStage(id, attempt).select(_.metrics)
-    ).flatten.getOrElse(TaskMetrics.newBuilder.result)
+  def getStageMetrics(id: StageID, attempt: StageAttemptID): (TaskMetrics, TaskMetrics) = {
+      db.fetchOne(
+        getStage(id, attempt).select(_.metrics, _.validatedMetrics)
+      ) match {
+        case Some((metricsOpt, validatedMetricsOpt)) =>
+          (
+            metricsOpt.getOrElse(TaskMetrics.newBuilder.result),
+            validatedMetricsOpt.getOrElse(TaskMetrics.newBuilder.result)
+          )
+        case None => (TaskMetrics.newBuilder.result, TaskMetrics.newBuilder.result)
+      }
   }
 
-  def getExecutorMetrics(id: ExecutorID): TaskMetrics = {
+  def getExecutorMetrics(id: ExecutorID): (TaskMetrics, TaskMetrics) = {
     db.fetchOne(
-      getExecutor(id).select(_.metrics)
-    ).flatten.getOrElse(TaskMetrics.newBuilder.result)
+      getExecutor(id).select(_.metrics, _.validatedMetrics)
+    ) match {
+      case Some((metricsOpt, validatedMetricsOpt)) =>
+        (
+          metricsOpt.getOrElse(TaskMetrics.newBuilder.result),
+          validatedMetricsOpt.getOrElse(TaskMetrics.newBuilder.result)
+          )
+      case None => (TaskMetrics.newBuilder.result, TaskMetrics.newBuilder.result)
+    }
   }
 
   def getTaskMetricsDeltasMap(metrics: Seq[(TaskID, _, _, SparkTaskMetrics)]): Map[TaskID, TaskMetrics] = {
@@ -106,8 +120,25 @@ trait DBHelpers extends HasDatabaseService {
       }).toMap
   }
 
+  def computeNewMetrics(existingMetrics: (TaskMetrics, TaskMetrics),
+                        deltas: Seq[(TaskID, TaskMetrics)],
+                        tasksAlreadyExisted: Set[TaskID]): (TaskMetrics, TaskMetrics) = {
+    deltas.foldLeft(existingMetrics)((e,p) => {
+      val (existing, validated) = e
+      val (tid, metrics) = p
+      (
+        SparkIDL.combineMetrics(existing, Some(metrics), add = true),
+        if (tasksAlreadyExisted(tid))
+          SparkIDL.combineMetrics(validated, Some(metrics), add = true)
+        else
+          validated
+        )
+    })
+  }
+
   def updateStageMetrics(metrics: Seq[(TaskID, StageID, StageAttemptID, SparkTaskMetrics)],
-                         metricsDeltas: Map[TaskID, TaskMetrics]) = {
+                         metricsDeltas: Map[TaskID, TaskMetrics],
+                         tasksAlreadyExisted: Set[TaskID]) = {
 
     val stagesToTaskIDs: Map[(StageID, StageAttemptID), Seq[TaskID]] =
       metrics.map {
@@ -118,36 +149,43 @@ trait DBHelpers extends HasDatabaseService {
     for {
       ((stageId, stageAttempt), taskIDs) <- stagesToTaskIDs
     } {
-      val existingMetrics = getStageMetrics(stageId, stageAttempt)
+      val stageDeltas = for {
+        id <- taskIDs
+        delta <- metricsDeltas.get(id)
+      } yield {
+          (id, delta)
+      }
 
-      val newMetrics =
-        (for {
-          id <- taskIDs
-          delta <- metricsDeltas.get(id)
-        } yield {
-            delta
-          }).foldLeft(existingMetrics)((e,m) => {
-          SparkIDL.combineMetrics(e, Some(m), add = true)
-        })
+      val (newMetrics, newValidatedMetrics) =
+        computeNewMetrics(
+          getStageMetrics(stageId, stageAttempt),
+          stageDeltas,
+          tasksAlreadyExisted
+        )
 
       db.findAndUpdateOne(
-        getStage(stageId, stageAttempt).findAndModify(_.metrics setTo newMetrics)
+        getStage(stageId, stageAttempt)
+          .findAndModify(_.metrics setTo newMetrics)
+          .and(_.validatedMetrics setTo newValidatedMetrics)
       )
     }
   }
 
   def updateExecutorMetrics(execID: ExecutorID,
-                            metricsDeltas: Map[TaskID, TaskMetrics]) = {
+                            metricsDeltas: Map[TaskID, TaskMetrics],
+                            tasksAlreadyExisted: Set[TaskID]) = {
 
-    val existingExecutorMetrics = getExecutorMetrics(execID)
-
-    val newExecutorMetrics =
-      metricsDeltas.values.toList.foldLeft(existingExecutorMetrics)((e,m) => {
-        SparkIDL.combineMetrics(e, Some(m), add = true)
-      })
+    val (newMetrics, newValidatedMetrics) =
+      computeNewMetrics(
+        getExecutorMetrics(execID),
+        metricsDeltas.toSeq,
+        tasksAlreadyExisted
+      )
 
     db.findAndUpdateOne(
-      getExecutor(execID).findAndModify(_.metrics setTo newExecutorMetrics)
+      getExecutor(execID)
+        .findAndModify(_.metrics setTo newMetrics)
+        .and(_.validatedMetrics setTo newValidatedMetrics)
     )
   }
 

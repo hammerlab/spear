@@ -64,6 +64,7 @@ struct Stage {
   16: optional bool ended    // sanity check: did we receive a StageCompleted event for this stage? == !!failureReason
   17: optional bool skipped
   18: optional bool succeeded
+  19: optional TaskMetrics validatedMetrics  // Only accept updates about tasks that we have received "start" events for.
 } (
   primary_key="appId",
   mongo_collection="stages",
@@ -120,6 +121,7 @@ struct Executor {
   8: optional string removedReason
   9: optional map<string, string> logUrlMap
   10: optional TaskMetrics metrics
+  11: optional TaskMetrics validatedMetrics  // Only accept updates about tasks that we have received "start" events for.
 } (
   primary_key="appId",
   mongo_collection="executors",

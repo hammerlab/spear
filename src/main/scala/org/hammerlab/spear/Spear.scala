@@ -35,7 +35,6 @@ class Spear(val conf: SparkConf)
     override def indexCache = None
   }
 
-
   def ensureIndexes(): Unit = {
 
     val casbahMongoClient = MongoClient(mongoHost, mongoPort)

@@ -142,7 +142,8 @@ trait TaskEventsListener extends HasDatabaseService with DBHelpers {
       )
     })
 
-    updateStageMetrics(metricsUpdates, metricsDeltas)
-    updateExecutorMetrics(ti.executorId, metricsDeltas)
+    val taskSeenSet = if (taskAttemptWasStarted) Set(tid) else Set[Long]()
+    updateStageMetrics(metricsUpdates, metricsDeltas, taskSeenSet)
+    updateExecutorMetrics(ti.executorId, metricsDeltas, taskSeenSet)
   }
 }
