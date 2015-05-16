@@ -114,8 +114,13 @@ trait TaskEventsListener extends HasDatabaseService with DBHelpers {
 
     val (successInc, failureInc) =
       (succeeded, existingSuccess, existingFailure) match {
-        case (_, true, _) | (false, false, true) => (0, 0)
+        // Existing success => already counted as a success
+        case (_, true, _) => (0, 0)
+        // Existing failure + current failure => already counted as a failure
+        case (false, false, true) => (0, 0)
+        // Existing failure + no existing success + current success => move from "failure" to "success"
         case (true, false, true) => (1, -1)
+        // No existing results + current success (resp. failure) => count as "success" (resp. "failure").
         case (true, false, false) => (1, 0)
         case (false, false, false) => (0, 1)
       }
