@@ -23,9 +23,7 @@ trait ExecutorEventsListener
       executorMetricsUpdate.taskMetrics.map {
         case (taskId, stageId, stageAttempt, taskMetrics) =>
           db.findAndUpdateOne(
-            Q(Task)
-            .where(_.id eqs taskId)
-            .findAndModify(_.metrics push SparkIDL.taskMetrics(taskMetrics))
+            getTask(taskId).findAndModify(_.metrics push SparkIDL.taskMetrics(taskMetrics))
           )
       }
 
@@ -54,8 +52,7 @@ trait ExecutorEventsListener
     }
 
     db.findAndUpsertOne(
-      Q(Executor)
-        .where(_.id eqs executorAdded.executorId)
+      getExecutor(executorAdded.executorId)
         .findAndModify(_.host setTo host)
         .and(_.port setTo portOpt)
         .and(_.addedAt setTo executorAdded.time)
@@ -66,10 +63,9 @@ trait ExecutorEventsListener
 
   override def onExecutorRemoved(executorRemoved: SparkListenerExecutorRemoved): Unit = {
     db.findAndUpdateOne(
-      Q(Executor)
-      .where(_.id eqs executorRemoved.executorId)
-      .findAndModify(_.removedAt setTo executorRemoved.time)
-      .and(_.removedReason setTo executorRemoved.reason)
+      getExecutor(executorRemoved.executorId)
+        .findAndModify(_.removedAt setTo executorRemoved.time)
+        .and(_.removedReason setTo executorRemoved.reason)
     )
   }
 }

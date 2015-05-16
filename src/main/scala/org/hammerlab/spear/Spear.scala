@@ -16,10 +16,13 @@ class Spear(sc: SparkContext,
   with StageEventsListener
   with TaskEventsListener
   with ExecutorEventsListener
+  with ApplicationEventsListener
   with MiscEventsListener
 {
 
   val applicationId = sc.applicationId
+
+  val appId = applicationId
 
   object db extends SpindleDatabaseService(ConcreteDBCollectionFactory)
 

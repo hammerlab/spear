@@ -1,5 +1,6 @@
 namespace java org.hammerlab.spear
 
+typedef string ApplicationID
 typedef i32 JobID
 typedef i32 StageID
 typedef i32 StageAttemptID
@@ -7,6 +8,125 @@ typedef i64 TaskID
 typedef string ExecutorID
 typedef i32 RDDID
 typedef i64 Time
+
+struct Application {
+  1: optional ApplicationID id
+  2: optional Duration time
+  3: optional string name
+  4: optional string user
+} (
+  primary_key="id",
+  mongo_collection="applications",
+  mongo_identifier="spark",
+)
+
+struct Job {
+  1: optional ApplicationID appId
+  2: optional JobID id
+  3: optional Duration time
+  4: optional list<i32> stageIDs
+  5: optional bool succeeded
+  6: optional map<string, string> properties
+  7: optional Counts taskCounts
+  8: optional Counts stageCounts
+} (
+  primary_key="appId",
+  mongo_collection="jobs",
+  mongo_identifier="spark",
+  index="appId: asc, id: asc"
+)
+
+struct Stage {
+  1: optional ApplicationID appId
+  2: optional StageID id
+  3: optional i32 attempt
+  4: optional string name
+  5: optional list<i32> rddIDs
+  6: optional string details
+  7: optional Counts taskCounts
+  8: optional Duration time
+  9: optional string failureReason
+  10: optional map<i64, AccumulableInfo> accumulables
+  11: optional TaskMetrics metrics
+  12: optional map<string, string> properties
+  13: optional JobID jobId
+} (
+  primary_key="appId",
+  mongo_collection="stages",
+  mongo_identifier="spark",
+  index="appId: asc, id: asc, attempt: asc"
+)
+
+struct StageJobJoin {
+  1: optional ApplicationID appId
+  2: optional StageID stageId
+  3: optional JobID jobId
+} (
+  primary_key="appId",
+  mongo_collection="stage_job_joins",
+  mongo_identifier="spark",
+  foreign_key="jobId",
+  index="appId: asc, stageId: asc"
+)
+
+struct Task {
+  1: optional ApplicationID appId
+  2: optional TaskID id
+  3: optional i32 index
+  4: optional i32 attempt
+  5: optional StageID stageId
+  6: optional i32 stageAttemptId
+  7: optional Duration time
+  8: optional ExecutorID execId
+  9: optional TaskLocality taskLocality
+  10: optional bool speculative
+  11: optional bool gettingResult
+  12: optional string taskType
+  13: optional TaskEndReason taskEndReason
+  14: optional list<TaskMetrics> metrics
+} (
+  primary_key="appId",
+  mongo_collection="tasks",
+  mongo_identifier="spark",
+  index="appId: asc, id: asc",
+  index="appId: asc, stageId: asc, stageAttemptId: asc, index: asc"
+)
+
+struct Executor {
+  1: optional ApplicationID appId
+  2: optional ExecutorID id
+  3: optional string host
+  4: optional i32 port
+  5: optional i32 totalCores
+  6: optional i64 addedAt
+  7: optional i64 removedAt
+  8: optional string removedReason
+  9: optional map<string, string> logUrlMap
+  10: optional TaskMetrics metrics
+} (
+  primary_key="appId",
+  mongo_collection="executors",
+  mongo_identifier="spark",
+  index="appId: asc, id: asc",
+  index="appId: asc, host: asc"
+)
+
+struct RDD {
+  1: optional ApplicationID appId
+  2: optional RDDID id
+  3: optional string name
+  4: optional i32 numPartitions
+  5: optional StorageLevel storageLevel
+  6: optional i32 numCachedPartitions
+  7: optional i64 memSize
+  8: optional i64 diskSize
+  9: optional i64 tachyonSize
+} (
+  primary_key="appId",
+  mongo_collection="rdds",
+  mongo_identifier="spark"
+  index="appId: asc, id: asc",
+)
 
 struct Duration {
   1: optional Time start
@@ -20,51 +140,6 @@ struct Counts {
   4: optional i32 failed
   5: optional i32 running
 }
-
-struct Job {
-  1: optional JobID id
-  2: optional Duration time
-  3: optional list<i32> stageIDs
-  4: optional bool succeeded
-  5: optional map<string, string> properties
-  6: optional Counts taskCounts
-  7: optional Counts stageCounts
-} (
-  primary_key="id",
-  mongo_collection="jobs",
-  mongo_identifier="spark"
-)
-
-struct Stage {
-  1: optional StageID id
-  2: optional i32 attempt
-  3: optional string name
-  4: optional list<i32> rddIDs
-  5: optional string details
-  6: optional Counts taskCounts
-  7: optional Duration time
-  8: optional string failureReason
-  9: optional map<i64, AccumulableInfo> accumulables
-  10: optional TaskMetrics metrics
-  11: optional map<string, string> properties
-  12: optional JobID jobId
-} (
-  primary_key="id",
-  mongo_collection="stages",
-  mongo_identifier="spark",
-  index="id: asc, attempt: asc",
-  foreign_key="jobId" // TODO(ryan): what does this get us?
-)
-
-struct StageJobJoin {
-  1: optional StageID stageId
-  2: optional JobID jobId
-} (
-  primary_key="stageId",
-  mongo_collection="stage_job_join",
-  mongo_identifier="spark",
-  foreign_key="jobId"
-)
 
 struct AccumulableInfo {
   1: optional i64 id
@@ -197,47 +272,9 @@ struct TaskMetrics {
   13: optional list<UpdatedBlock> updatedBlocks
 }
 
-struct Task {
-  1: optional TaskID id
-  2: optional i32 index
-  3: optional i32 attempt
-  4: optional StageID stageId
-  5: optional i32 stageAttemptId
-  6: optional Duration time
-  7: optional ExecutorID execId
-  8: optional TaskLocality taskLocality
-  9: optional bool speculative
-  10: optional bool gettingResult
-  11: optional string taskType
-  12: optional TaskEndReason taskEndReason
-  13: optional list<TaskMetrics> metrics
-} (
-  primary_key="id",
-  mongo_collection="tasks",
-  mongo_identifier="spark",
-  index="stageId: asc, stageAttemptId: asc, index: asc"
-)
-
 enum TaskLocality {
   PROCESS_LOCAL, NODE_LOCAL, NO_PREF, RACK_LOCAL, ANY
 }
-
-struct Executor {
-  1: optional ExecutorID id
-  2: optional string host
-  3: optional i32 port
-  4: optional i32 totalCores
-  5: optional i64 addedAt
-  6: optional i64 removedAt
-  7: optional string removedReason
-  8: optional map<string, string> logUrlMap
-  9: optional TaskMetrics metrics
-} (
-  primary_key="id",
-  mongo_collection="executors",
-  mongo_identifier="spark",
-  index="host: asc"
-)
 
 struct StorageLevel {
   1: optional bool useDisk
@@ -246,18 +283,3 @@ struct StorageLevel {
   4: optional bool deserialized
   5: optional i32 replication
 }
-
-struct RDD {
-  1: optional RDDID id
-  2: optional string name
-  3: optional i32 numPartitions
-  4: optional StorageLevel storageLevel
-  5: optional i32 numCachedPartitions
-  6: optional i64 memSize
-  7: optional i64 diskSize
-  8: optional i64 tachyonSize
-} (
-  primary_key="id",
-  mongo_collection="rdds",
-  mongo_identifier="spark"
-)

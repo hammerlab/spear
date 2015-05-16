@@ -1,6 +1,6 @@
 package org.hammerlab.spear
 
-import org.apache.spark.scheduler.{SparkListener, SparkListenerApplicationEnd, SparkListenerApplicationStart, SparkListenerUnpersistRDD, SparkListenerBlockManagerRemoved, SparkListenerBlockManagerAdded, SparkListenerEnvironmentUpdate}
+import org.apache.spark.scheduler.{SparkListener, SparkListenerUnpersistRDD, SparkListenerBlockManagerRemoved, SparkListenerBlockManagerAdded, SparkListenerEnvironmentUpdate}
 
 trait MiscEventsListener {
   this: SparkListener =>
@@ -18,14 +18,6 @@ trait MiscEventsListener {
   }
 
   override def onUnpersistRDD(unpersistRDD: SparkListenerUnpersistRDD): Unit = {
-    // TODO(ryan)
-  }
-
-  override def onApplicationStart(applicationStart: SparkListenerApplicationStart): Unit = {
-    // TODO(ryan)
-  }
-
-  override def onApplicationEnd(applicationEnd: SparkListenerApplicationEnd): Unit = {
     // TODO(ryan)
   }
 }

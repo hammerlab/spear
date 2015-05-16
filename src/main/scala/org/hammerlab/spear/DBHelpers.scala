@@ -4,27 +4,60 @@ import com.foursquare.rogue.spindle.{SpindleQuery => Q}
 import com.foursquare.rogue.spindle.SpindleRogue._
 import org.apache.spark.scheduler.StageInfo
 import org.apache.spark.storage.RDDInfo
-import org.hammerlab.spear.SparkTypedefs.{TaskID, ExecutorID, StageAttemptID, StageID, Time}
+import org.hammerlab.spear.SparkTypedefs.{RDDID, JobID, TaskID, ExecutorID, StageAttemptID, StageID, Time}
 import org.apache.spark.executor.{
   TaskMetrics => SparkTaskMetrics
 }
 
 trait DBHelpers extends HasDatabaseService {
 
+  def appId: String
+
+  def getJob(id: JobID) =
+    Q(Job)
+      .where(_.appId eqs appId)
+      .and(_.id eqs id)
+
+  def getStage(id: StageID, attempt: StageAttemptID) =
+    Q(Stage)
+      .where(_.appId eqs appId)
+      .and(_.id eqs id)
+      .and(_.attempt eqs attempt)
+
+  def getStageJobJoin(stageId: StageID) =
+    Q(StageJobJoin)
+      .where(_.appId eqs appId)
+      .and(_.stageId eqs stageId)
+
+  def getExecutor(id: ExecutorID) =
+    Q(Executor)
+      .where(_.appId eqs appId)
+      .and(_.id eqs id)
+
+  def getTask(id: TaskID) =
+    Q(Task)
+      .where(_.appId eqs appId)
+      .and(_.id eqs id)
+
+  def getTasks(ids: Seq[TaskID]) =
+    Q(Task)
+      .where(_.appId eqs appId)
+      .and(_.id in ids)
+
+  def getRDD(id: RDDID) =
+    Q(RDD)
+      .where(_.appId eqs appId)
+      .and(_.id eqs id)
+
   def getStageMetrics(id: StageID, attempt: StageAttemptID): TaskMetrics = {
     db.fetchOne(
-      Q(Stage)
-      .where(_.id eqs id)
-      .and(_.attempt eqs attempt)
-      .select(_.metrics)
+      getStage(id, attempt).select(_.metrics)
     ).flatten.getOrElse(TaskMetrics.newBuilder.result)
   }
 
   def getExecutorMetrics(id: ExecutorID): TaskMetrics = {
     db.fetchOne(
-      Q(Executor)
-      .where(_.id eqs id)
-      .select(_.metrics)
+      getExecutor(id).select(_.metrics)
     ).flatten.getOrElse(TaskMetrics.newBuilder.result)
   }
 
@@ -32,7 +65,7 @@ trait DBHelpers extends HasDatabaseService {
     val taskIds = metrics.map(_._1)
 
     val fromDB = db.fetch(
-      Q(Task).where(_.id in taskIds).select(_.id, _.metrics.slice(-1))
+      getTasks(taskIds).select(_.id, _.metrics.slice(-1))
     )
     val existingTaskMetrics: Map[TaskID, TaskMetrics] =
       fromDB.flatMap {
@@ -79,10 +112,7 @@ trait DBHelpers extends HasDatabaseService {
         })
 
       db.findAndUpdateOne(
-        Q(Stage)
-        .where(_.id eqs stageId)
-        .and(_.attempt eqs stageAttempt)
-        .findAndModify(_.metrics setTo newMetrics)
+        getStage(stageId, stageAttempt).findAndModify(_.metrics setTo newMetrics)
       )
     }
   }
@@ -98,23 +128,20 @@ trait DBHelpers extends HasDatabaseService {
       })
 
     db.findAndUpdateOne(
-      Q(Executor)
-      .where(_.id eqs execID)
-      .findAndModify(_.metrics setTo newExecutorMetrics)
+      getExecutor(execID).findAndModify(_.metrics setTo newExecutorMetrics)
     )
   }
 
   def upsertRDD(ri: RDDInfo): Unit = {
     db.findAndUpsertOne(
-      Q(RDD)
-      .where(_.id eqs ri.id)
-      .findAndModify(_.name setTo ri.name)
-      .and(_.numPartitions setTo ri.numPartitions)
-      .and(_.storageLevel setTo SparkIDL.storageLevel(ri.storageLevel))
-      .and(_.numCachedPartitions setTo ri.numCachedPartitions)
-      .and(_.memSize setTo ri.memSize)
-      .and(_.diskSize setTo ri.diskSize)
-      .and(_.tachyonSize setTo ri.tachyonSize)
+      getRDD(ri.id)
+        .findAndModify(_.name setTo ri.name)
+        .and(_.numPartitions setTo ri.numPartitions)
+        .and(_.storageLevel setTo SparkIDL.storageLevel(ri.storageLevel))
+        .and(_.numCachedPartitions setTo ri.numCachedPartitions)
+        .and(_.memSize setTo ri.memSize)
+        .and(_.diskSize setTo ri.diskSize)
+        .and(_.tachyonSize setTo ri.tachyonSize)
     )
   }
 

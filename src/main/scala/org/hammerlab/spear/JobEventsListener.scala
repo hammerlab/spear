@@ -16,8 +16,7 @@ trait JobEventsListener extends HasDatabaseService with DBHelpers {
     val stageCounts = Counts.newBuilder.num(jobStart.stageIds.length).started(0).failed(0).running(0).succeeded(0).result
 
     db.findAndUpsertOne(
-      Q(Job)
-        .where(_.id eqs jobStart.jobId)
+      getJob(jobStart.jobId)
         .findAndModify(_.time setTo makeDuration(jobStart.time))
         .and(_.stageIDs setTo jobStart.stageIds)
         .and(_.properties setTo SparkIDL.properties(jobStart.properties))
@@ -28,22 +27,22 @@ trait JobEventsListener extends HasDatabaseService with DBHelpers {
     jobStart.stageInfos.foreach(si => {
       val taskCounts = Counts.newBuilder.num(si.numTasks).started(0).failed(0).running(0).succeeded(0).result
       db.findAndUpsertOne(
-        Q(Stage)
-        .where(_.id eqs si.stageId)
-        .and(_.attempt eqs si.attemptId)
-        .findAndModify(_.name setTo si.name)
-        .and(_.taskCounts setTo taskCounts)
-        .and(_.rddIDs setTo si.rddInfos.map(_.id))
-        .and(_.details setTo si.details)
-        .and(_.time setTo makeDuration(si.submissionTime, si.completionTime))
-        .and(_.failureReason setTo si.failureReason)
-        .and(_.jobId setTo jobStart.jobId)
+        getStage(si.stageId, si.attemptId)
+          .findAndModify(_.name setTo si.name)
+          // TODO(ryan): possible race if the stage starts and metrics from
+          // the stage are processed via an Executor heartbeat before this
+          // event is processed. Verify that this is impossible, or fix it
+          // somehow.
+          .and(_.taskCounts setTo taskCounts)
+          .and(_.rddIDs setTo si.rddInfos.map(_.id))
+          .and(_.details setTo si.details)
+          .and(_.time setTo makeDuration(si.submissionTime, si.completionTime))
+          .and(_.failureReason setTo si.failureReason)
+          .and(_.jobId setTo jobStart.jobId)
       )
 
       db.findAndUpsertOne(
-        Q(StageJobJoin)
-          .where(_.stageId eqs si.stageId)
-          .findAndModify(_.jobId setTo jobStart.jobId)
+        getStageJobJoin(si.stageId).findAndModify(_.jobId setTo jobStart.jobId)
       )
     })
 
@@ -52,10 +51,9 @@ trait JobEventsListener extends HasDatabaseService with DBHelpers {
 
   override def onJobEnd(jobEnd: SparkListenerJobEnd): Unit = {
     db.findAndUpdateOne(
-      Q(Job)
-      .where(_.id eqs jobEnd.jobId)
-      .findAndModify(_.time.sub.field(_.end) setTo jobEnd.time)
-      .and(_.succeeded setTo (jobEnd.jobResult == JobSucceeded))
+      getJob(jobEnd.jobId)
+        .findAndModify(_.time.sub.field(_.end) setTo jobEnd.time)
+        .and(_.succeeded setTo (jobEnd.jobResult == JobSucceeded))
     )
   }
 }

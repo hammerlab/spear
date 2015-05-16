@@ -1,7 +1,6 @@
 package org.hammerlab.spear
 
 import org.apache.spark.scheduler.{SparkListenerTaskEnd, SparkListenerTaskGettingResult, SparkListenerTaskStart, SparkListener}
-import com.foursquare.rogue.spindle.{SpindleQuery => Q}
 import com.foursquare.rogue.spindle.SpindleRogue._
 import org.hammerlab.spear.TaskEndReasonType.SUCCESS
 
@@ -12,8 +11,7 @@ trait TaskEventsListener extends HasDatabaseService with DBHelpers {
   override def onTaskStart(taskStart: SparkListenerTaskStart): Unit = {
     val ti = taskStart.taskInfo
     db.findAndUpsertOne(
-      Q(Task)
-        .where(_.id eqs ti.taskId)
+      getTask(ti.taskId)
         .findAndModify(_.index setTo ti.index)
         .and(_.attempt setTo ti.attempt)
         .and(_.stageId setTo taskStart.stageId)
@@ -24,22 +22,17 @@ trait TaskEventsListener extends HasDatabaseService with DBHelpers {
         .and(_.speculative setTo ti.speculative)
     )
 
-    val q = Q(Stage)
-            .where(_.id eqs taskStart.stageId)
-            .and(_.attempt eqs taskStart.stageAttemptId)
-            .findAndModify(_.taskCounts.sub.field(_.started) inc 1)
-            .and(_.taskCounts.sub.field(_.running) inc 1)
-
-    db.findAndUpdateOne(q)
+    db.findAndUpdateOne(
+      getStage(taskStart.stageId, taskStart.stageAttemptId)
+        .findAndModify(_.taskCounts.sub.field(_.started) inc 1)
+        .and(_.taskCounts.sub.field(_.running) inc 1)
+    )
 
     db.fetchOne(
-      Q(StageJobJoin)
-        .where(_.stageId eqs taskStart.stageId)
-        .select(_.jobId)
+      getStageJobJoin(taskStart.stageId).select(_.jobId)
     ).flatten.foreach(jobId => {
       db.findAndUpdateOne(
-        Q(Job)
-          .where(_.id eqs jobId)
+        getJob(jobId)
           .findAndModify(_.taskCounts.sub.field(_.started) inc 1)
           .and(_.taskCounts.sub.field(_.running) inc 1)
       )
@@ -48,9 +41,8 @@ trait TaskEventsListener extends HasDatabaseService with DBHelpers {
 
   override def onTaskGettingResult(taskGettingResult: SparkListenerTaskGettingResult): Unit = {
     db.findAndUpdateOne(
-      Q(Task)
-      .where(_.id eqs taskGettingResult.taskInfo.taskId)
-      .findAndModify(_.gettingResult setTo true)
+      getTask(taskGettingResult.taskInfo.taskId)
+        .findAndModify(_.gettingResult setTo true)
     )
   }
 
@@ -67,30 +59,24 @@ trait TaskEventsListener extends HasDatabaseService with DBHelpers {
     val metricsDeltas = getTaskMetricsDeltasMap(metricsUpdates)
 
     db.findAndUpdateOne(
-      Q(Task)
-      .where(_.id eqs tid)
-      .findAndModify(_.taskType setTo taskEnd.taskType)
-      .and(_.taskEndReason setTo reason)
-      .and(_.metrics push tm)
-      .and(_.time setTo makeDuration(ti.launchTime, ti.finishTime))
+      getTask(tid)
+        .findAndModify(_.taskType setTo taskEnd.taskType)
+        .and(_.taskEndReason setTo reason)
+        .and(_.metrics push tm)
+        .and(_.time setTo makeDuration(ti.launchTime, ti.finishTime))
     )
 
     db.findAndUpdateOne(
-      Q(Stage)
-      .where(_.id eqs taskEnd.stageId)
-      .and(_.attempt eqs taskEnd.stageAttemptId)
-      .findAndModify(_.taskCounts.sub.field(s => if (success) s.succeeded else s.failed) inc 1)
-      .and(_.taskCounts.sub.field(_.running) inc -1)
+      getStage(taskEnd.stageId, taskEnd.stageAttemptId)
+        .findAndModify(_.taskCounts.sub.field(s => if (success) s.succeeded else s.failed) inc 1)
+        .and(_.taskCounts.sub.field(_.running) inc -1)
     )
 
     db.fetchOne(
-      Q(StageJobJoin)
-        .where(_.stageId eqs taskEnd.stageId)
-        .select(_.jobId)
+      getStageJobJoin(taskEnd.stageId).select(_.jobId)
     ).flatten.foreach(jobId => {
       db.findAndUpdateOne(
-        Q(Job)
-          .where(_.id eqs jobId)
+        getJob(jobId)
           .findAndModify(_.taskCounts.sub.field(s => if (success) s.succeeded else s.failed) inc 1)
           .and(_.taskCounts.sub.field(_.running) inc -1)
       )
