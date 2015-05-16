@@ -2,42 +2,46 @@
 Spear is a [`SparkListener`](https://github.com/apache/spark/blob/v1.3.1/core/src/main/scala/org/apache/spark/scheduler/SparkListener.scala) that maintains info about Spark jobs, stages, tasks, executors, and RDDs in MongoDB.
 
 ## Usage
-
-Build the `Spear` JARs with SBT:
-```
-$ sbt assembly
-```
-
-Add the shaded `Spear` JAR (`target/spear-with-dependencies-1.0-SNAPSHOT.jar`) to the classpath of your Spark jobs, or to the `--jars` argument to `spark-shell`:
+* Add the shaded `Spear` JAR (`target/spear-with-dependencies-1.0-SNAPSHOT.jar`) to the classpath of your Spark driver. 
+* Register `org.hammerlab.spear.Spear` in the `spark.extraListeners` conf param, e.g. for a `spark-shell`:
 
 ```
-$ $SPARK_HOME/bin/spark-shell --jars /path/to/spear/target/spear-with-dependencies-1.0-SNAPSHOT.jar
+$ $SPARK_HOME/bin/spark-shell \
+    --driver-class-path /path/to/spear/target/spear-with-dependencies-1.0-SNAPSHOT.jar \
+    --conf spark-extraListeners=org.hammerlab.spear.Spear
 ```
 
-Instantiate a `Spear` with your `SparkContext` and (optional) Mongo server hostname/port:
+### Configuring Mongo URL
+
+By default, `Spear` will look for a MongoDB instance at `localhost:27017/<app ID>`, where the database name `<app ID>` is taken from the Spark application ID.
+
+To configure `Spear` to write events to a MongoDB instance at a different URL, pass `spear.host`, `spear.port`, and `spear.db` conf params to Spark:
 
 ```
-val spear = new Spear(sc, mongoHost, mongoPort)
-```
-xor
-```
-val spear = new Spear(sc)  // defaults to localhost:27017
+$ $SPARK_HOME/bin/spark-shell \
+    --driver-class-path /path/to/spear/target/spear-with-dependencies-1.0-SNAPSHOT.jar \
+    --conf spark.extraListeners=org.hammerlab.spear.Spear \
+    --conf spear.host=<mongo host> \
+    --conf spear.port=<mongo port> \
+    --conf spear.db=<mongo db name>
 ```
 
-`Spear` will register itself with `SparkContext` to receive updates about your Spark jobs' progress, and write them to your Mongo instance.
+Your `SparkContext` will send updates about your Spark jobs' progress which `Spear` will then write to your Mongo instance.
 
 ## DB Collections
 
-`Spear` creates a database named after your Spark application (as returned by `sc.applicationId`); each application's metrics are siloed in this way. To inspect from a mongo console, connect to your DB accordingly from the shell:
+`Spear` creates and maintains several tables in Mongo: `applications`, `jobs`, `stages`, `tasks`, `executors`, `rdds`, and more. 
+
+To inspect these tables and their contents from a mongo console, connect to your DB accordingly, e.g. from the shell:
 ```
-$ mongo <mongo host>:<mongo port>/<spark app ID>
+$ mongo <mongo host>:<mongo port>/<db name; possibly Spark app ID>
 ```
 or from within a running mongo client:
 ```
-> use <spark app ID>
+> use <db name>
 ```
 
-`Spear` writes several collections to this database:
+Below are some descriptions or examples of each collections that `Spear` works with:
 
 ### `jobs`
 Spark jobs, e.g.:
@@ -45,7 +49,8 @@ Spark jobs, e.g.:
 > db.jobs.findOne()
 {
 	"_id" : ObjectId("5555f9f2d860627bc896ba99"),
-	"id" : 0,
+	"appId" : "local-1431734416602",
+   	"id" : 0,
 	"stageCounts" : {
 		"num" : 2,
 		"started" : 2,
@@ -80,6 +85,7 @@ Spark jobs, e.g.:
 > db.stages.findOne()
 {
 	"_id" : ObjectId("5555f9f2d860627bc896ba9a"),
+	"appId" : "local-1431734416602",
 	"attempt" : 0,
 	"id" : 0,
 	"jobId" : 0,
@@ -141,6 +147,7 @@ Spark jobs, e.g.:
 > db.tasks.findOne()
 {
 	"_id" : ObjectId("5555f9f3d860627bc896baa1"),
+	"appId" : "local-1431734416602",
 	"id" : NumberLong(0),
 	"speculative" : false,
 	"taskLocality" : 0,
@@ -197,6 +204,7 @@ Spark jobs, e.g.:
 ```
 {
 	"_id" : ObjectId("5555f9a9d4c69b527c8b38b7"),
+	"appId" : "local-1431734416602",
 	"id" : "<driver>",
 	"host" : "localhost",
 	"port" : 50973,
@@ -238,6 +246,7 @@ Spark jobs, e.g.:
 > db.rdds.findOne()
 {
 	"_id" : ObjectId("5555f9f2d860627bc896ba9e"),
+	"appId" : "local-1431734416602",
 	"id" : 1,
 	"tachyonSize" : NumberLong(0),
 	"diskSize" : NumberLong(0),
@@ -253,6 +262,13 @@ Spark jobs, e.g.:
 	"numPartitions" : 10,
 	"name" : "1"
 }
+```
+
+## Building
+
+Build the `Spear` JARs with SBT:
+```
+$ sbt assembly
 ```
 
 ## Notes/Gotchas
