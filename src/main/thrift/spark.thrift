@@ -1,9 +1,11 @@
 namespace java org.hammerlab.spear
 
 typedef string ApplicationID
-typedef i32 JobID
-typedef i32 StageID
-typedef i32 StageAttemptID
+typedef i32 ID
+typedef ID JobID
+typedef ID StageID
+typedef ID StageAttemptID
+typedef ID TaskIndex
 typedef i64 TaskID
 typedef string ExecutorID
 typedef i32 RDDID
@@ -25,10 +27,17 @@ struct Job {
   2: optional JobID id
   3: optional Duration time
   4: optional list<i32> stageIDs
+
+  // NOTE(ryan): the "failed" case includes a private[spark] JobResult that
+  // wraps an Exception; it would be nice to get at that info.
   5: optional bool succeeded
   6: optional map<string, string> properties
   7: optional Counts taskCounts
-  8: optional Counts stageCounts
+  8: optional Counts taskAttemptCounts
+  9: optional Counts stageCounts
+  10: optional Counts stageAttemptCounts
+  11: optional bool started
+  12: optional bool ended
 } (
   primary_key="appId",
   mongo_collection="jobs",
@@ -44,17 +53,23 @@ struct Stage {
   5: optional list<i32> rddIDs
   6: optional string details
   7: optional Counts taskCounts
-  8: optional Duration time
-  9: optional string failureReason
-  10: optional map<i64, AccumulableInfo> accumulables
-  11: optional TaskMetrics metrics
-  12: optional map<string, string> properties
-  13: optional JobID jobId
+  8: optional Counts taskAttemptCounts
+  9: optional Duration time
+  10: optional string failureReason
+  11: optional map<i64, AccumulableInfo> accumulables
+  12: optional TaskMetrics metrics
+  13: optional map<string, string> properties
+  14: optional JobID jobId
+  15: optional bool started  // sanity check: did we receive a StageSubmitted event for this stage?
+  16: optional bool ended    // sanity check: did we receive a StageCompleted event for this stage? == !!failureReason
+  17: optional bool skipped
+  18: optional bool succeeded
 } (
   primary_key="appId",
   mongo_collection="stages",
   mongo_identifier="spark",
-  index="appId: asc, id: asc, attempt: asc"
+  index="appId: asc, id: asc, attempt: asc",
+  index="appId: asc, jobId: asc"
 )
 
 struct StageJobJoin {
@@ -84,6 +99,8 @@ struct Task {
   12: optional string taskType
   13: optional TaskEndReason taskEndReason
   14: optional list<TaskMetrics> metrics
+  15: optional bool started  // sanity check: did we receive a TaskStart event for this task?
+  16: optional bool ended    // sanity check: did we receive a TaskEnd event for this task? == !!taskEndReason
 } (
   primary_key="appId",
   mongo_collection="tasks",
@@ -139,6 +156,7 @@ struct Counts {
   3: optional i32 succeeded
   4: optional i32 failed
   5: optional i32 running
+  6: optional i32 skipped
 }
 
 struct AccumulableInfo {

@@ -22,6 +22,7 @@ trait JobEventsListener extends HasDatabaseService with DBHelpers {
         .and(_.properties setTo SparkIDL.properties(jobStart.properties))
         .and(_.taskCounts setTo taskCounts)
         .and(_.stageCounts setTo stageCounts)
+        .and(_.started setTo true)
     )
 
     jobStart.stageInfos.foreach(si => {
@@ -50,10 +51,33 @@ trait JobEventsListener extends HasDatabaseService with DBHelpers {
   }
 
   override def onJobEnd(jobEnd: SparkListenerJobEnd): Unit = {
-    db.findAndUpdateOne(
+    val skippedStages = db.fetch(getNotStartedStages(jobEnd.jobId))
+    val numSkippedStages = skippedStages.length
+    val numSkippedTasks = skippedStages.flatMap(_.taskCountsOption()).map(_.num).sum
+
+    println(s"Job ${jobEnd.jobId} finished; found $numSkippedStages skipped stages ($numSkippedTasks tasks)")
+
+    db.findAndUpsertOne(
       getJob(jobEnd.jobId)
         .findAndModify(_.time.sub.field(_.end) setTo jobEnd.time)
         .and(_.succeeded setTo (jobEnd.jobResult == JobSucceeded))
+        .and(_.ended setTo true)
+        .and(_.stageCounts.sub.field(_.skipped) setTo numSkippedStages)
+        .and(_.stageCounts.sub.field(_.num) inc (-1*numSkippedStages))
+        .and(_.taskCounts.sub.field(_.skipped) setTo numSkippedTasks)
+        .and(_.taskCounts.sub.field(_.num) inc (-1*numSkippedTasks)),
+      returnNew = true
+    ) match {
+      case None =>
+        throw new Exception(s"JobEnd upsert failure: $jobEnd")
+      case _ =>
+    }
+
+    db.updateMulti(
+      getStages(jobEnd.jobId)
+        .and(_.started neqs true)
+        .modify(_.skipped setTo true)
     )
+
   }
 }

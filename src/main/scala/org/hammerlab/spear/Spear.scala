@@ -40,6 +40,7 @@ class Spear(val conf: SparkConf)
 
     val casbahMongoClient = MongoClient(mongoHost, mongoPort)
     val casbahDB = casbahMongoClient(mongoDatabase)
+
     val applications = casbahDB("applications")
     val jobs = casbahDB("jobs")
     val stages = casbahDB("stages")
@@ -53,6 +54,7 @@ class Spear(val conf: SparkConf)
     jobs.ensureIndex(MongoDBObject("appId" -> 1, "id" -> 1))
 
     stages.ensureIndex(MongoDBObject("appId" -> 1, "id" -> 1, "attempt" -> 1))
+    stages.ensureIndex(MongoDBObject("appId" -> 1, "jobId" -> 1))
 
     stageJobJoins.ensureIndex(MongoDBObject("appId" -> 1, "stageId" -> 1))
 

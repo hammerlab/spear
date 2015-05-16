@@ -4,7 +4,7 @@ import com.foursquare.rogue.spindle.{SpindleQuery => Q}
 import com.foursquare.rogue.spindle.SpindleRogue._
 import org.apache.spark.scheduler.StageInfo
 import org.apache.spark.storage.RDDInfo
-import org.hammerlab.spear.SparkTypedefs.{RDDID, JobID, TaskID, ExecutorID, StageAttemptID, StageID, Time}
+import org.hammerlab.spear.SparkTypedefs.{TaskIndex, RDDID, JobID, TaskID, ExecutorID, StageAttemptID, StageID, Time}
 import org.apache.spark.executor.{
   TaskMetrics => SparkTaskMetrics
 }
@@ -24,6 +24,18 @@ trait DBHelpers extends HasDatabaseService {
       .and(_.id eqs id)
       .and(_.attempt eqs attempt)
 
+  def getStageAttempts(id: StageID) =
+    Q(Stage)
+      .where(_.appId eqs appId)
+      .and(_.id eqs id)
+
+  def getStages(jobId: JobID) =
+    Q(Stage)
+      .where(_.appId eqs appId)
+      .and(_.jobId eqs jobId)
+
+  def getNotStartedStages(jobId: JobID) = getStages(jobId).and(_.started neqs true)
+
   def getStageJobJoin(stageId: StageID) =
     Q(StageJobJoin)
       .where(_.appId eqs appId)
@@ -38,6 +50,13 @@ trait DBHelpers extends HasDatabaseService {
     Q(Task)
       .where(_.appId eqs appId)
       .and(_.id eqs id)
+
+  def getTaskAttempts(stageId: StageID, attemptId: StageAttemptID, index: TaskIndex) =
+    Q(Task)
+      .where(_.appId eqs appId)
+      .and(_.stageId eqs stageId)
+      .and(_.stageAttemptId eqs attemptId)
+      .and(_.index eqs index)
 
   def getTasks(ids: Seq[TaskID]) =
     Q(Task)
