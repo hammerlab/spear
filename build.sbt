@@ -13,6 +13,7 @@ resolvers += DefaultMavenRepository
 
 libraryDependencies ++= List(
   ("org.apache.spark" % "spark-core_2.10" % "1.3.1") % "provided",
+  "org.mongodb" %% "casbah" % "2.8.1",
   "com.foursquare" % "common-thrift-bson" % "3.0.0-M11",
   "com.foursquare" %% "rogue-field"         % "2.5.0" intransitive(),
   "com.foursquare" %% "rogue-core"          % "3.0.0-beta13.1" intransitive(),
