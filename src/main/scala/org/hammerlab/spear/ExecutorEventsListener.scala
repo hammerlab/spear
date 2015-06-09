@@ -63,7 +63,7 @@ trait ExecutorEventsListener
       getExecutor(executorAdded.executorId)
         .findAndModify(_.host setTo host)
         .and(_.port setTo portOpt)
-        .and(_.addedAt setTo executorAdded.time)
+        .and(_.time.sub.field(_.start) setTo executorAdded.time)
         .and(_.totalCores setTo executorAdded.executorInfo.totalCores)
         .and(_.logUrlMap setTo executorAdded.executorInfo.logUrlMap)
     )
@@ -72,7 +72,7 @@ trait ExecutorEventsListener
   override def onExecutorRemoved(executorRemoved: SparkListenerExecutorRemoved): Unit = {
     db.findAndUpdateOne(
       getExecutor(executorRemoved.executorId)
-        .findAndModify(_.removedAt setTo executorRemoved.time)
+        .findAndModify(_.time.sub.field(_.end) setTo executorRemoved.time)
         .and(_.removedReason setTo executorRemoved.reason)
     )
   }

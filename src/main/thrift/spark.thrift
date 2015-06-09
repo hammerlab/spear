@@ -116,12 +116,12 @@ struct Executor {
   3: optional string host
   4: optional i32 port
   5: optional i32 totalCores
-  6: optional i64 addedAt
-  7: optional i64 removedAt
-  8: optional string removedReason
-  9: optional map<string, string> logUrlMap
-  10: optional TaskMetrics metrics
-  11: optional TaskMetrics validatedMetrics  // Only accept updates about tasks that we have received "start" events for.
+  6: optional Duration time
+  7: optional string removedReason
+  8: optional map<string, string> logUrlMap
+  9: optional TaskMetrics metrics
+  10: optional TaskMetrics validatedMetrics  // Only accept updates about tasks that we have received "start" events for.
+  11: optional i64 maxMem
 } (
   primary_key="appId",
   mongo_collection="executors",
@@ -140,6 +140,7 @@ struct RDD {
   7: optional i64 memSize
   8: optional i64 diskSize
   9: optional i64 tachyonSize
+  10: optional bool unpersisted
 } (
   primary_key="appId",
   mongo_collection="rdds",
@@ -303,3 +304,13 @@ struct StorageLevel {
   4: optional bool deserialized
   5: optional i32 replication
 }
+
+struct Environment {
+  1: optional ApplicationID appId
+  2: optional map<string, list<list<string>>> env
+}(
+  mongo_collection="env",
+  mongo_identifier="spark",
+  primary_key="appId",
+  index="appId: asc"
+)
