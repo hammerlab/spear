@@ -1,6 +1,8 @@
 # Spear
 Spear is a [`SparkListener`](https://github.com/apache/spark/blob/v1.3.1/core/src/main/scala/org/apache/spark/scheduler/SparkListener.scala) that maintains info about Spark jobs, stages, tasks, executors, and RDDs in MongoDB.
 
+**This code is being heavily refactored / replaced**; it is too slow / resource-intensive to run in the Spark driver as written, and other approaches are being explored.
+
 ## Usage
 * Add the shaded `Spear` JAR (`target/spear-with-dependencies-1.0-SNAPSHOT.jar`) to the classpath of your Spark driver. 
 * Register `org.hammerlab.spear.Spear` in the `spark.extraListeners` conf param, e.g. for a `spark-shell`:
