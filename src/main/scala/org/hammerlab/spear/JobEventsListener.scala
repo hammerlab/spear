@@ -1,7 +1,6 @@
 package org.hammerlab.spear
 
 import org.apache.spark.scheduler.{JobSucceeded, SparkListenerJobEnd, SparkListenerJobStart, SparkListener}
-import com.foursquare.rogue.spindle.{SpindleQuery => Q}
 import com.foursquare.rogue.spindle.SpindleRogue._
 
 trait JobEventsListener extends HasDatabaseService with DBHelpers {
@@ -12,8 +11,8 @@ trait JobEventsListener extends HasDatabaseService with DBHelpers {
 
     val numTasks = jobStart.stageInfos.map(_.numTasks).sum
 
-    val taskCounts = Counts.newBuilder.num(numTasks).started(0).failed(0).running(0).succeeded(0).result
-    val stageCounts = Counts.newBuilder.num(jobStart.stageIds.length).started(0).failed(0).running(0).succeeded(0).result
+    val taskCounts = Counts.newBuilder.num(numTasks).started(0).failed(0).running(0).succeeded(0).result()
+    val stageCounts = Counts.newBuilder.num(jobStart.stageIds.length).started(0).failed(0).running(0).succeeded(0).result()
 
     db.findAndUpsertOne(
       getJob(jobStart.jobId)
@@ -26,7 +25,7 @@ trait JobEventsListener extends HasDatabaseService with DBHelpers {
     )
 
     jobStart.stageInfos.foreach(si => {
-      val taskCounts = Counts.newBuilder.num(si.numTasks).started(0).failed(0).running(0).succeeded(0).result
+      val taskCounts = Counts.newBuilder.num(si.numTasks).started(0).failed(0).running(0).succeeded(0).result()
       db.findAndUpsertOne(
         getStage(si.stageId, si.attemptId)
           .findAndModify(_.name setTo si.name)
